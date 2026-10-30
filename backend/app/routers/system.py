@@ -77,7 +77,7 @@ def set_mode(body: ModeIn, request: Request, user: User = Depends(require("tradi
     tr = state.get_locked(db, "trading")
     data = state.get(db, "data")
     if body.mode in trading.MT5_MODES and data["source"] != "mt5":
-        raise HTTPException(400, "MT5 modes require the MT5 data source (not the simulator)")
+        raise HTTPException(400, "Broker modes require broker data (cTrader/MT5), not the simulator")
     if body.mode == "MT5_LIVE":
         if not user_has(user, "live.approve"):
             raise HTTPException(403, "Missing permission: live.approve")

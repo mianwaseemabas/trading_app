@@ -17,20 +17,20 @@ export default function Settings() {
   const switchSource = (to) => {
     const msg = to === "simulator"
       ? "Switch to SIMULATED data? Stored broker candles will be deleted so synthetic and real data never mix."
-      : "Switch to MT5 broker data? All simulated candles and quotes will be deleted.";
+      : "Switch to broker data (cTrader / MT5)? All simulated candles and quotes will be deleted.";
     if (window.confirm(msg)) run(() => api.put("/system/data", { source: to }), `Data source: ${to}`).then(reload).catch(() => {});
   };
   return (
     <div className="stack">
       <Card title="Market data source" actions={<Badge tone={src === "mt5" ? "ok" : "warn"}>{src}</Badge>}>
-        <p><b>MT5</b>: real quotes, candles, account data and execution through the Windows bridge (see <code>bridge/README.md</code>).<br /><b>Simulator</b>: synthetic random-walk prices to test the dashboard, signals and paper execution without a broker. Never use simulator results to judge the strategy.</p>
+        <p><b>Broker</b>: real quotes, candles, account data and execution from your broker — via the cTrader connector (<code>deploy/setup-ctrader.sh</code>) or the Windows MT5 bridge (<code>bridge/README.md</code>).<br /><b>Simulator</b>: synthetic random-walk prices to test the dashboard, signals and paper execution without a broker. Never use simulator results to judge the strategy.</p>
         <div className="row gap">
-          <button className="btn" disabled={busy || src === "mt5"} onClick={() => switchSource("mt5")}>Use MT5 data</button>
+          <button className="btn" disabled={busy || src === "mt5"} onClick={() => switchSource("mt5")}>Use broker data</button>
           <button className="btn" disabled={busy || src === "simulator"} onClick={() => switchSource("simulator")}>Use simulator</button>
         </div>
         <p className="muted small">Trading mode must be OFF or SIGNALS ONLY and no positions may be open to switch.</p>
       </Card>
-      <Card title="MT5 bridge">
+      <Card title="Broker connection">
         <div className="kv">
           <div><span className="muted">Configured (BRIDGE_SECRET set)</span><span>{status.bridge.configured ? "yes" : "no"}</span></div>
           <div><span className="muted">Last seen</span><span>{status.bridge.last_seen || "never"}</span></div>

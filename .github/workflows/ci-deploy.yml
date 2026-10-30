@@ -36,6 +36,16 @@ jobs:
       - run: pip install -r backend/requirements-dev.txt
       - run: python -m pytest -q backend/tests
 
+  connector-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r connectors/ctrader/requirements.txt pytest
+      - run: python -m pytest -q connectors/ctrader/tests
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:
@@ -51,7 +61,7 @@ jobs:
   deploy:
     # Auto-deploys to the VPS after tests pass on main, once these repository
     # secrets exist: VPS_HOST, VPS_USER, VPS_SSH_KEY (optional VPS_PORT).
-    needs: [backend-tests, frontend-build]
+    needs: [backend-tests, connector-tests, frontend-build]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     env:

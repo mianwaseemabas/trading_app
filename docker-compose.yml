@@ -3,8 +3,10 @@
 #   backend  FastAPI API (2 workers)
 #   worker   trading engine (single instance)
 #   web      nginx: dashboard + /api proxy, published on 127.0.0.1:${WEB_PORT}
+#   ctrader  optional cTrader Open API connector (profile "ctrader")
 #   caddy    optional automatic-HTTPS reverse proxy (profile "caddy"), used only
 #            when the VPS has no existing web server on ports 80/443.
+# Optional services are switched on with COMPOSE_PROFILES in .env (e.g. "caddy,ctrader").
 name: qivynex-trade
 
 x-app-env: &app-env
@@ -76,6 +78,35 @@ services:
     networks: [internal, edge]
     security_opt: ["no-new-privileges:true"]
 
+  ctrader:
+    # cTrader Open API connector (enable with COMPOSE_PROFILES=ctrader in .env,
+    # or run deploy/setup-ctrader.sh). Replaces the Windows MT5 bridge.
+    build: ./connectors/ctrader
+    profiles: ["ctrader"]
+    restart: unless-stopped
+    environment:
+      API_URL: http://backend:8000
+      BRIDGE_KEY_ID: ${BRIDGE_KEY_ID:-mt5-bridge-1}
+      BRIDGE_SECRET: ${BRIDGE_SECRET}
+      CTRADER_CLIENT_ID: ${CTRADER_CLIENT_ID:-}
+      CTRADER_CLIENT_SECRET: ${CTRADER_CLIENT_SECRET:-}
+      CTRADER_ACCESS_TOKEN: ${CTRADER_ACCESS_TOKEN:-}
+      CTRADER_REFRESH_TOKEN: ${CTRADER_REFRESH_TOKEN:-}
+      CTRADER_ACCOUNT_LOGIN: ${CTRADER_ACCOUNT_LOGIN:-}
+      SYMBOL_MAP: ${CTRADER_SYMBOL_MAP:-}
+      MAX_VOLUME: ${CONNECTOR_MAX_VOLUME:-0.10}
+      MAX_SPREAD_POINTS: ${CONNECTOR_MAX_SPREAD_POINTS:-30}
+      ALLOW_REAL_ACCOUNT: ${ALLOW_REAL_ACCOUNT:-false}
+      TZ: UTC
+    volumes:
+      - ctrader_state:/data
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
   caddy:
     image: caddy:2-alpine
     profiles: ["caddy"]
@@ -92,6 +123,7 @@ services:
     networks: [edge]
 
 volumes:
+  ctrader_state:
   pgdata:
   caddy_data:
   caddy_config:

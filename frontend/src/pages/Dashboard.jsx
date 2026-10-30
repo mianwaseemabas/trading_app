@@ -7,8 +7,8 @@ const MODES = [
   { k: "OFF", d: "Engine idle. No signals, no orders." },
   { k: "SIGNALS_ONLY", d: "Generate and log signals only." },
   { k: "PAPER", d: "Simulated execution against live quotes (internal paper account)." },
-  { k: "MT5_DEMO", d: "Real orders on the MT5 DEMO account via the Windows bridge." },
-  { k: "MT5_LIVE", d: "Real money. Requires approved live gate." },
+  { k: "MT5_DEMO", label: "BROKER DEMO", d: "Real orders on the broker DEMO account (cTrader connector or MT5 bridge)." },
+  { k: "MT5_LIVE", label: "BROKER LIVE", d: "Real money. Requires approved live gate." },
 ];
 
 function ModeSwitcher({ status, reload }) {
@@ -27,7 +27,7 @@ function ModeSwitcher({ status, reload }) {
       <div className="mode-grid">
         {MODES.map((m) => (
           <button key={m.k} className={`mode ${cur === m.k ? "on" : ""} ${m.k === "MT5_LIVE" ? "danger" : ""}`} disabled={!can("trading.control") || (m.k === "MT5_LIVE" && !status.live_gate.approved)} onClick={() => choose(m.k)} title={m.d}>
-            <strong>{m.k.replace("_", " ")}</strong>
+            <strong>{m.label || m.k.replace("_", " ")}</strong>
             <span>{m.d}</span>
           </button>
         ))}
@@ -35,7 +35,7 @@ function ModeSwitcher({ status, reload }) {
       {target && (
         <PasswordPrompt
           title={`Switch to ${target}`}
-          message={target === "MT5_LIVE" ? "This enables automated trading with real money. Losses can exceed expectations." : "Orders will be sent to the MT5 demo account through the bridge."}
+          message={target === "MT5_LIVE" ? "This enables automated trading with real money. Losses can exceed expectations." : "Orders will be sent to your broker demo account through the connector."}
           extra={target === "MT5_LIVE" && (
             <Field label='Type "ENABLE LIVE TRADING"'><input value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
           )}
@@ -116,7 +116,7 @@ export default function Dashboard() {
   const bridgeOk = s.bridge.age_s !== null && s.bridge.age_s < 90;
   return (
     <div className="stack">
-      {s.data.source === "simulator" && <div className="alert warn">Data source is the <b>simulator</b> (synthetic prices for testing the system). Switch to MT5 in System settings to use broker data.</div>}
+      {s.data.source === "simulator" && <div className="alert warn">Data source is the <b>simulator</b> (synthetic prices for testing the system). Switch to broker data in System settings once cTrader or MT5 is connected.</div>}
       <Unlock status={s} reload={reload} />
       {s.trading.kill_switch && <div className="alert bad"><strong>Kill switch engaged.</strong> {s.trading.kill_switch_reason}</div>}
 
@@ -125,7 +125,7 @@ export default function Dashboard() {
         <Stat label="Free margin" value={fmt.money(a?.free_margin)} sub={`Margin ${fmt.money(s.account_meta?.margin)}`} />
         <Stat label="Realized today" value={<span className={pnlClass(s.realized_today)}>{fmt.money(s.realized_today)}</span>} sub="net of costs" />
         <Stat label="Unrealized" value={<span className={pnlClass(s.unrealized)}>{fmt.money(s.unrealized)}</span>} sub={`${s.open_positions} open position(s) · not profit until closed`} />
-        <Stat label="MT5 bridge" value={<Badge tone={bridgeOk ? "ok" : s.bridge.configured ? "bad" : "muted"}>{bridgeOk ? "Connected" : s.bridge.configured ? "Offline" : "Not configured"}</Badge>} sub={`Last seen ${fmt.ago(s.bridge.age_s)}${s.account_meta?.trade_mode ? " · " + s.account_meta.trade_mode : ""}`} />
+        <Stat label="Broker connection" value={<Badge tone={bridgeOk ? "ok" : s.bridge.configured ? "bad" : "muted"}>{bridgeOk ? "Connected" : s.bridge.configured ? "Offline" : "Not configured"}</Badge>} sub={`Last seen ${fmt.ago(s.bridge.age_s)}${s.account_meta?.trade_mode ? " · " + s.account_meta.trade_mode : ""}`} />
         <Stat label="Strategy" value={`${s.strategy.name} v${s.strategy.version}`} sub={`${s.strategy.symbols.join(", ")} · trades on ${s.strategy.trade_timeframes.join(", ")}`} />
       </div>
 
@@ -175,7 +175,7 @@ export default function Dashboard() {
         )}
         {can("market.view") && (
           <Card title="Quotes">
-            <Table rows={quotes} rowKey="symbol" empty="No quotes yet — waiting for the MT5 bridge" cols={[
+            <Table rows={quotes} rowKey="symbol" empty="No quotes yet — waiting for the broker connection" cols={[
               { label: "Symbol", k: "symbol" },
               { label: "Bid", num: true, render: (q) => fmt.px(q.bid, digitsFor(q.symbol)) },
               { label: "Ask", num: true, render: (q) => fmt.px(q.ask, digitsFor(q.symbol)) },

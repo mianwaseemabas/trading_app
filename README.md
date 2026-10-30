@@ -15,7 +15,8 @@ execution (paper / MT5 demo / MT5 live behind a gate) → dashboard, audit trail
 | `backend/` | Python 3.12, FastAPI, SQLAlchemy, PostgreSQL, pandas | API, auth, strategy, risk engine, paper broker, backtester, bridge API |
 | `backend` worker | same image, `python -m app.worker` | Trading engine loop (single instance, DB advisory lock) |
 | `frontend/` | React 19 (esbuild), nginx | Dashboard served at `https://trade.qivynex.com` |
-| `bridge/` | Python + `MetaTrader5` package | Runs on Windows next to the MT5 terminal; data + execution |
+| `connectors/ctrader/` | Python, cTrader Open API (WebSocket) | **cTrader connector** — runs on the Linux VPS, no Windows needed |
+| `bridge/` | Python + `MetaTrader5` package | Alternative: runs on Windows next to an MT5 terminal |
 | `deploy/` | bash, Docker Compose | One-command VPS install, updates, backups |
 
 ```
@@ -49,7 +50,8 @@ MT5 terminal (Windows) ──HTTPS + HMAC──►  nginx ─► FastAPI ─► 
 - Reconciliation with broker positions; any unexplained difference blocks new trades.
 - Live gate: 5-item checklist + approval with password; the bridge additionally refuses real accounts unless `ALLOW_REAL_ACCOUNT=true`.
 
-Trading modes: `OFF` → `SIGNALS_ONLY` → `PAPER` → `MT5_DEMO` → `MT5_LIVE`.
+Trading modes: `OFF` → `SIGNALS_ONLY` → `PAPER` → `MT5_DEMO` (shown as *Broker demo*) → `MT5_LIVE` (*Broker live*).
+The broker modes work with either connector (cTrader or MT5).
 
 ## Deploy to the VPS (trade.qivynex.com)
 
@@ -88,8 +90,10 @@ tests, builds the dashboard and deploys.
 
 - **Try it without a broker:** System → Data source → *Simulator* (synthetic prices, clearly labelled). Set mode
   to `PAPER` to watch signals, risk checks and paper fills. Never judge the strategy on simulated data.
-- **Real data:** set up the Windows bridge (`bridge/README.md`), switch the data source back to *MT5*.
-  The bridge backfills 5,000 bars per symbol/timeframe.
+- **Real data with cTrader (recommended):** follow `connectors/ctrader/README.md`, then run
+  `sudo /opt/trading_app/deploy/setup-ctrader.sh` and choose System → *Use broker data*.
+- **Real data with MT5:** set up the Windows bridge (`bridge/README.md`) and choose *Use broker data*.
+  Either connector backfills ~5,000 bars per symbol/timeframe.
 - **Backtest:** Backtest page. Uses the same strategy and risk code as live, next-bar entries, spread,
   slippage, commission and swap, in-sample/out-of-sample split and segment stability, with honest
   robustness warnings. You can also import MT5 "Export Bars" CSV files for longer history.

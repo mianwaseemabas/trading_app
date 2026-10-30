@@ -177,7 +177,7 @@ def data_freshness(db: Session, symbol: str, tf: str, data_cfg: dict, mode: str)
     if mode in MT5_MODES:
         snap_at = db.scalar(select(func.max(AccountSnapshot.at)).where(AccountSnapshot.source == "mt5"))
         if snap_at is None or (utcnow() - snap_at).total_seconds() > data_cfg["stale_heartbeat_seconds"]:
-            return False, "MT5 bridge heartbeat stale"
+            return False, "broker connector heartbeat stale"
     return True, "ok"
 
 
@@ -201,7 +201,7 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
     if mode in MT5_MODES and meta.get("trade_mode"):
         expected = "demo" if mode == "MT5_DEMO" else "real"
         if meta["trade_mode"] != expected:
-            rec = {"ok": False, "detail": f"MT5 account is '{meta['trade_mode']}' but mode is {mode}"}
+            rec = {"ok": False, "detail": f"Broker account is '{meta['trade_mode']}' but mode is {mode}"}
     positions = [OpenPos(p.symbol, p.side, p.unrealized_pnl or 0) for p in open_positions(db, mode)]
     pending = db.scalars(
         select(Order).where(Order.mode == mode, Order.action == "OPEN", Order.status.in_(["PENDING", "SENT"]))

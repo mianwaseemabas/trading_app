@@ -104,7 +104,7 @@ function LiveGate() {
   const allOk = Object.values(items).every(Boolean);
   return (
     <Card title="Live-trading gate" actions={<Badge tone={data.gate.approved ? "warn" : "muted"}>{data.gate.approved ? `Approved by ${data.gate.approved_by}` : "Not approved"}</Badge>}>
-      <p className="muted small">MT5 Live mode stays unavailable until every item is confirmed and an authorised user approves with their password. Unchecking any item revokes approval and drops Live to Demo.</p>
+      <p className="muted small">Broker Live mode stays unavailable until every item is confirmed and an authorised user approves with their password. Unchecking any item revokes approval and drops Live to Demo.</p>
       <ul className="gate">
         {Object.entries(data.items).map(([k, label]) => (
           <li key={k}><label className="check"><input type="checkbox" disabled={!editable} checked={!!items[k]} onChange={(e) => setItems({ ...items, [k]: e.target.checked })} /> {label}</label></li>

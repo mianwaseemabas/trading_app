@@ -119,6 +119,11 @@ if [[ $PROXY_MODE == auto ]]; then
   fi
   sed -i "s/^PROXY_MODE=.*/PROXY_MODE=$PROXY_MODE/" .env
 fi
+if [[ $PROXY_MODE == caddy ]] && ! grep -q '^COMPOSE_PROFILES=.*caddy' .env; then
+  if grep -q '^COMPOSE_PROFILES=' .env; then sed -i 's/^COMPOSE_PROFILES=\(.*\)/COMPOSE_PROFILES=\1,caddy/; s/^COMPOSE_PROFILES=,/COMPOSE_PROFILES=/' .env
+  else echo "COMPOSE_PROFILES=caddy" >> .env; fi
+fi
+set -a; . ./.env; set +a
 c_ok "Reverse proxy mode: $PROXY_MODE"
 
 # --------------------------------------------------------------- DNS check
@@ -157,10 +162,8 @@ EOF
 fi
 
 # ----------------------------------------------------------------- start
-profile=()
-[[ $PROXY_MODE == caddy ]] && profile=(--profile caddy)
 c_info "Building and starting containers (first build takes a few minutes)"
-docker compose "${profile[@]}" up -d --build --remove-orphans
+docker compose up -d --build --remove-orphans
 for i in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:${WEB_PORT}/api/health" >/dev/null 2>&1; then break; fi
   sleep 3
@@ -251,7 +254,8 @@ echo "  Admin user:     $ADMIN_USER"
 echo "  Temp password:  $NEW_ADMIN_PW   (also saved in /root/qivynex-trade-credentials.txt)"
 echo "                  You must change it at first sign-in. Then enable 2FA under My account."
 fi
-echo "  Bridge secret:  grep BRIDGE_SECRET $APP_DIR/.env   (copy into bridge.env on the Windows MT5 host)"
+echo "  Connect cTrader: sudo $APP_DIR/deploy/setup-ctrader.sh"
+echo "  (or MT5 bridge:  grep BRIDGE_SECRET $APP_DIR/.env and copy it into bridge.env on Windows)"
 echo "  Update later:   sudo $APP_DIR/deploy/update.sh"
 echo "  Emergency stop: cd $APP_DIR && docker compose exec backend python -m app.cli kill-switch on"
 echo "================================================================"

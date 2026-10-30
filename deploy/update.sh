@@ -8,10 +8,9 @@ git fetch --quiet origin "$BRANCH"
 git pull --ff-only --quiet origin "$BRANCH"
 echo "Code at $(git rev-parse --short HEAD)"
 set -a; . ./.env; set +a
-profile=()
-[[ ${PROXY_MODE:-} == caddy ]] && profile=(--profile caddy)
 ./deploy/backup.sh || echo "warning: pre-update backup failed"
-docker compose "${profile[@]}" up -d --build --remove-orphans
+# Optional services (caddy, ctrader) come from COMPOSE_PROFILES in .env.
+docker compose up -d --build --remove-orphans
 docker image prune -f >/dev/null
 for i in $(seq 1 40); do
   curl -fsS "http://127.0.0.1:${WEB_PORT:-8090}/api/health" >/dev/null 2>&1 && { echo "Healthy."; exit 0; }
