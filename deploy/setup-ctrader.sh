@@ -8,10 +8,14 @@ APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_DIR"
 [[ -f .env ]] || { echo "Run deploy/install.sh first"; exit 1; }
 
-setvar() {  # setvar KEY VALUE  -> replace or append in .env without echoing secrets
+setvar() {  # setvar KEY VALUE -> replace or append in .env, single-quoted so $ # spaces stay literal
   local k="$1" v="$2"
-  v="${v//\\/\\\\}"; v="${v//&/\\&}"; v="${v//|/\\|}"
-  if grep -q "^$k=" .env; then sed -i "s|^$k=.*|$k=$v|" .env; else printf '%s=%s\n' "$k" "$2" >> .env; fi
+  [[ $v == *"'"* ]] && { echo "Values containing a single quote (') are not supported for $k"; exit 1; }
+  local line="$k='$v'"
+  local tmp; tmp="$(mktemp)"
+  grep -v "^$k=" .env > "$tmp" || true
+  printf '%s\n' "$line" >> "$tmp"
+  cat "$tmp" > .env && rm -f "$tmp"
 }
 ask() {  # ask VAR "Prompt" [secret]
   local __v
@@ -40,6 +44,12 @@ if grep -q '^COMPOSE_PROFILES=' .env; then
   grep -q '^COMPOSE_PROFILES=.*ctrader' .env || sed -i 's/^COMPOSE_PROFILES=\(.*\)/COMPOSE_PROFILES=\1,ctrader/; s/^COMPOSE_PROFILES=,/COMPOSE_PROFILES=/' .env
 else
   echo "COMPOSE_PROFILES=ctrader" >> .env
+fi
+# Only one broker connector should feed the app at a time.
+if grep -q '^COMPOSE_PROFILES=.*capital' .env; then
+  echo "Note: the Capital.com connector is also enabled. Disabling it so only cTrader feeds the app."
+  sed -i 's/,capital//; s/capital,//; s/^COMPOSE_PROFILES=capital$/COMPOSE_PROFILES=/' .env
+  docker compose stop capital 2>/dev/null || true
 fi
 chmod 600 .env
 

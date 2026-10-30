@@ -3,6 +3,7 @@
 #   backend  FastAPI API (2 workers)
 #   worker   trading engine (single instance)
 #   web      nginx: dashboard + /api proxy, published on 127.0.0.1:${WEB_PORT}
+#   capital  optional Capital.com connector (profile "capital")
 #   ctrader  optional cTrader Open API connector (profile "ctrader")
 #   caddy    optional automatic-HTTPS reverse proxy (profile "caddy"), used only
 #            when the VPS has no existing web server on ports 80/443.
@@ -107,6 +108,36 @@ services:
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
 
+  capital:
+    # Capital.com REST API connector (enable with COMPOSE_PROFILES=capital in .env,
+    # or run deploy/setup-capital.sh).
+    build: ./connectors/capital
+    profiles: ["capital"]
+    restart: unless-stopped
+    environment:
+      API_URL: http://backend:8000
+      BRIDGE_KEY_ID: ${BRIDGE_KEY_ID:-mt5-bridge-1}
+      BRIDGE_SECRET: ${BRIDGE_SECRET}
+      CAPITAL_API_KEY: ${CAPITAL_API_KEY:-}
+      CAPITAL_IDENTIFIER: ${CAPITAL_IDENTIFIER:-}
+      CAPITAL_API_PASSWORD: ${CAPITAL_API_PASSWORD:-}
+      CAPITAL_ENV: ${CAPITAL_ENV:-demo}
+      CAPITAL_ACCOUNT_ID: ${CAPITAL_ACCOUNT_ID:-}
+      CAPITAL_UNITS_PER_SIZE: ${CAPITAL_UNITS_PER_SIZE:-}
+      SYMBOL_MAP: ${CAPITAL_SYMBOL_MAP:-}
+      MAX_VOLUME: ${CONNECTOR_MAX_VOLUME:-0.10}
+      MAX_SPREAD_POINTS: ${CONNECTOR_MAX_SPREAD_POINTS:-30}
+      ALLOW_REAL_ACCOUNT: ${ALLOW_REAL_ACCOUNT:-false}
+      TZ: UTC
+    volumes:
+      - capital_state:/data
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
   caddy:
     image: caddy:2-alpine
     profiles: ["caddy"]
@@ -123,6 +154,7 @@ services:
     networks: [edge]
 
 volumes:
+  capital_state:
   ctrader_state:
   pgdata:
   caddy_data:

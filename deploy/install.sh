@@ -254,7 +254,7 @@ echo "  Admin user:     $ADMIN_USER"
 echo "  Temp password:  $NEW_ADMIN_PW   (also saved in /root/qivynex-trade-credentials.txt)"
 echo "                  You must change it at first sign-in. Then enable 2FA under My account."
 fi
-echo "  Connect cTrader: sudo $APP_DIR/deploy/setup-ctrader.sh"
+echo "  Connect broker: sudo $APP_DIR/deploy/setup-capital.sh  (or setup-ctrader.sh)"
 echo "  (or MT5 bridge:  grep BRIDGE_SECRET $APP_DIR/.env and copy it into bridge.env on Windows)"
 echo "  Update later:   sudo $APP_DIR/deploy/update.sh"
 echo "  Emergency stop: cd $APP_DIR && docker compose exec backend python -m app.cli kill-switch on"

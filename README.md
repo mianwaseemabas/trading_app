@@ -15,6 +15,7 @@ execution (paper / MT5 demo / MT5 live behind a gate) → dashboard, audit trail
 | `backend/` | Python 3.12, FastAPI, SQLAlchemy, PostgreSQL, pandas | API, auth, strategy, risk engine, paper broker, backtester, bridge API |
 | `backend` worker | same image, `python -m app.worker` | Trading engine loop (single instance, DB advisory lock) |
 | `frontend/` | React 19 (esbuild), nginx | Dashboard served at `https://trade.qivynex.com` |
+| `connectors/capital/` | Python, Capital.com REST API | **Capital.com connector** — runs on the Linux VPS, instant API key |
 | `connectors/ctrader/` | Python, cTrader Open API (WebSocket) | **cTrader connector** — runs on the Linux VPS, no Windows needed |
 | `bridge/` | Python + `MetaTrader5` package | Alternative: runs on Windows next to an MT5 terminal |
 | `deploy/` | bash, Docker Compose | One-command VPS install, updates, backups |
@@ -51,7 +52,7 @@ MT5 terminal (Windows) ──HTTPS + HMAC──►  nginx ─► FastAPI ─► 
 - Live gate: 5-item checklist + approval with password; the bridge additionally refuses real accounts unless `ALLOW_REAL_ACCOUNT=true`.
 
 Trading modes: `OFF` → `SIGNALS_ONLY` → `PAPER` → `MT5_DEMO` (shown as *Broker demo*) → `MT5_LIVE` (*Broker live*).
-The broker modes work with either connector (cTrader or MT5).
+The broker modes work with any connector (Capital.com, cTrader or MT5); run one at a time.
 
 ## Deploy to the VPS (trade.qivynex.com)
 
@@ -91,7 +92,9 @@ and variables → Actions. From then on every push to `main` runs the tests and,
 
 - **Try it without a broker:** System → Data source → *Simulator* (synthetic prices, clearly labelled). Set mode
   to `PAPER` to watch signals, risk checks and paper fills. Never judge the strategy on simulated data.
-- **Real data with cTrader (recommended):** follow `connectors/ctrader/README.md`, then run
+- **Real data with Capital.com:** follow `connectors/capital/README.md`, then run
+  `sudo /opt/trading_app/deploy/setup-capital.sh` and choose System → *Use broker data*.
+- **Real data with cTrader:** follow `connectors/ctrader/README.md`, then run
   `sudo /opt/trading_app/deploy/setup-ctrader.sh` and choose System → *Use broker data*.
 - **Real data with MT5:** set up the Windows bridge (`bridge/README.md`) and choose *Use broker data*.
   Either connector backfills ~5,000 bars per symbol/timeframe.
