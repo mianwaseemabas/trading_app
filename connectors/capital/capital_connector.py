@@ -209,6 +209,7 @@ class Connector:
         self.positions: list[dict] = []
         self.state = self._load_state()
         self.leverage = 30
+        self.windows: dict[str, int] = {}
 
     # ---------------------------------------------------------- state
     def _load_state(self) -> dict:
@@ -288,31 +289,59 @@ class Connector:
                         "spread": round(spread)})
         return out
 
+    def _window_chunk(self, m: Market, tf: str, to: float) -> list[dict]:
+        """One historical chunk ending at `to`. Capital.com limits the from/to span per request
+        (error.invalid.max.daterange); the span is halved until accepted and remembered per timeframe."""
+        step = TF_SECONDS[tf]
+        bars = self.windows.get(tf, 1000)
+        while True:
+            try:
+                return self.candles(m, tf, to - bars * step, to, min(1000, bars + 1))
+            except CapitalError as e:
+                if "daterange" not in str(e).lower() or bars <= 10:
+                    raise
+                bars //= 2
+                self.windows[tf] = bars
+                log.info("%s history window reduced to %s bars per request", tf, bars)
+
     def push_candles(self):
         now = time.time()
         for m in list(self.markets.values()):
             for tf in self.timeframes:
-                key, step = (m.app_name, tf), TF_SECONDS[tf]
-                bars: dict[int, dict] = {}
-                if key not in self.last_bar:
-                    to = now
-                    while len(bars) < BACKFILL_BARS:
-                        chunk = self.candles(m, tf, to - 1000 * step, to)
-                        new = [b for b in chunk if b["time"] not in bars]
-                        if not new:
-                            break
-                        bars.update({b["time"]: b for b in new})
-                        to = min(b["time"] for b in new) - 1
-                else:
-                    bars = {b["time"]: b for b in self.candles(m, tf, now - 12 * step, None, 20)}
-                closed = sorted((b for t, b in bars.items() if t + step <= now), key=lambda b: b["time"])
-                if not closed or self.last_bar.get(key) == closed[-1]["time"]:
+                try:
+                    self._push_candles_one(m, tf, now)
+                except Exception as e:  # never let history problems block trading/reconciliation
+                    log.error("Candles %s %s failed: %s", m.app_name, tf, e)
+
+    def _push_candles_one(self, m: Market, tf: str, now: float):
+        key, step = (m.app_name, tf), TF_SECONDS[tf]
+        bars: dict[int, dict] = {}
+        if key not in self.last_bar:
+            to = now
+            empty = 0
+            while len(bars) < BACKFILL_BARS:
+                chunk = self._window_chunk(m, tf, to)
+                new = [b for b in chunk if b["time"] not in bars]
+                if not new:
+                    empty += 1
+                    if empty >= 3:  # e.g. weekend / no older data
+                        break
+                    to -= self.windows.get(tf, 1000) * step
                     continue
-                for k in range(0, len(closed), 2000):
-                    res = app("POST", "/api/bridge/candles", {"symbol": m.app_name, "timeframe": tf, "candles": closed[k:k + 2000]})
-                    if res.get("rejected"):
-                        log.warning("%s %s: %s candles rejected by server validation", m.app_name, tf, res["rejected"])
-                self.last_bar[key] = closed[-1]["time"]
+                empty = 0
+                bars.update({b["time"]: b for b in new})
+                to = min(b["time"] for b in new) - 1
+        else:
+            # Latest bars only: no date range, just the most recent `max` values.
+            bars = {b["time"]: b for b in self.candles(m, tf, None, None, 20)}
+        closed = sorted((b for t, b in bars.items() if t + step <= now), key=lambda b: b["time"])
+        if not closed or self.last_bar.get(key) == closed[-1]["time"]:
+            return
+        for k in range(0, len(closed), 2000):
+            res = app("POST", "/api/bridge/candles", {"symbol": m.app_name, "timeframe": tf, "candles": closed[k:k + 2000]})
+            if res.get("rejected"):
+                log.warning("%s %s: %s candles rejected by server validation", m.app_name, tf, res["rejected"])
+        self.last_bar[key] = closed[-1]["time"]
 
     # -------------------------------------------------------- account
     def account_payload(self) -> dict:
@@ -569,7 +598,7 @@ class Connector:
                 backoff = 5
             except CapitalError as e:
                 log.error("Capital.com error: %s", e)
-                if e.status in (400, 401, 403):
+                if e.status in (401, 403) or "invalid.details" in str(e) or "api.key" in str(e).lower():
                     log.error("If this persists, check CAPITAL_API_KEY / CAPITAL_IDENTIFIER / CAPITAL_API_PASSWORD "
                               "and that the API key is active (Settings > API integrations)")
                 time.sleep(backoff)

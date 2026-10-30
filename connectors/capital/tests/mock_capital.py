@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 MARKETS = {"EURUSD": (1.08000, 5), "GBPUSD": (1.27000, 5), "USDJPY": (150.000, 3)}
-STATE = {"balance": 500.0, "positions": {}, "confirms": {}, "activities": [], "no_stop": False, "lot_size": 1, "contract": 1}
+STATE = {"max_span": 10**9, "balance": 500.0, "positions": {}, "confirms": {}, "activities": [], "no_stop": False, "lot_size": 1, "contract": 1}
 LOCK = threading.Lock()
 
 
@@ -123,6 +123,8 @@ class H(BaseHTTPRequestHandler):
             step = {"MINUTE_15": 900, "HOUR": 3600}[q["resolution"]]
             to = datetime.fromisoformat(q["to"]).replace(tzinfo=timezone.utc).timestamp() if "to" in q else time.time()
             frm = datetime.fromisoformat(q["from"]).replace(tzinfo=timezone.utc).timestamp() if "from" in q else to - int(q.get("max", 10)) * step
+            if "from" in q and "to" in q and (to - frm) / step > STATE["max_span"]:
+                return self._send(400, {"errorCode": "error.invalid.max.daterange"})
             frm = max(frm, time.time() - 40 * 86400)
             t = (int(frm) // step + 1) * step
             prices = []

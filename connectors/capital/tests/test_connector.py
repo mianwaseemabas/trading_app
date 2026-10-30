@@ -31,7 +31,7 @@ def server():
 
 @pytest.fixture
 def conn(tmp_path, monkeypatch):
-    mock.STATE.update(positions={}, confirms={}, activities=[], no_stop=False, lot_size=1, contract=1)
+    mock.STATE.update(positions={}, confirms={}, activities=[], no_stop=False, lot_size=1, contract=1, max_span=10**9)
     monkeypatch.setattr(cc, "STATE_FILE", tmp_path / "state.json")
     reports = []
     monkeypatch.setattr(cc.Connector, "report", lambda self, cid, **kw: reports.append((cid, kw)))
@@ -130,3 +130,26 @@ def test_close_and_closed_report(conn):
 def test_candles_are_bid_ohlc_utc(conn):
     bars = conn.candles(conn.markets["EURUSD"], "H1", None, None, 5)
     assert bars and all(b["time"] % 3600 == 0 and b["low"] <= b["open"] <= b["high"] for b in bars)
+
+
+def test_history_backfill_adapts_to_daterange_limit(conn, monkeypatch):
+    mock.STATE["max_span"] = 200  # broker rejects spans over 200 bars
+    posted = []
+    monkeypatch.setattr(cc, "app", lambda method, path, payload=None: posted.append(payload) or {"stored": 1})
+    monkeypatch.setattr(cc, "BACKFILL_BARS", 700)
+    conn.timeframes = ["H1"]
+    conn.push_candles()
+    assert conn.windows["H1"] <= 200
+    bars = [b for p in posted if p and p["symbol"] == "EURUSD" for b in p["candles"]]
+    assert len(bars) >= 700 and len({b["time"] for b in bars}) == len(bars)
+    # incremental update uses no date range at all
+    posted.clear()
+    conn._push_candles_one(conn.markets["EURUSD"], "H1", __import__("time").time() + 3600)
+    assert posted == [] or all(p["candles"] for p in posted)
+
+
+def test_history_errors_do_not_block_cycle(conn, monkeypatch):
+    def boom(*a, **k):
+        raise cc.CapitalError(500, "server down")
+    monkeypatch.setattr(conn, "candles", boom)
+    conn.push_candles()  # must not raise
