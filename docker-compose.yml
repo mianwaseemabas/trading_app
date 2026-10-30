@@ -3,11 +3,11 @@
 #   backend  FastAPI API (2 workers)
 #   worker   trading engine (single instance)
 #   web      nginx: dashboard + /api proxy, published on 127.0.0.1:${WEB_PORT}
-#   capital  optional Capital.com connector (profile "capital")
-#   ctrader  optional cTrader Open API connector (profile "ctrader")
+#   capital  Capital.com connector  } managed from the dashboard (Brokers page);
+#   ctrader  cTrader connector      } only the active one trades, the other waits
 #   caddy    optional automatic-HTTPS reverse proxy (profile "caddy"), used only
 #            when the VPS has no existing web server on ports 80/443.
-# Optional services are switched on with COMPOSE_PROFILES in .env (e.g. "caddy,ctrader").
+# The optional "caddy" service is switched on with COMPOSE_PROFILES=caddy in .env.
 name: qivynex-trade
 
 x-app-env: &app-env
@@ -80,10 +80,9 @@ services:
     security_opt: ["no-new-privileges:true"]
 
   ctrader:
-    # cTrader Open API connector (enable with COMPOSE_PROFILES=ctrader in .env,
-    # or run deploy/setup-ctrader.sh). Replaces the Windows MT5 bridge.
+    # cTrader Open API connector. Always running; it stays idle unless cTrader is the
+    # active broker chosen on the dashboard's Brokers page (credentials are set there too).
     build: ./connectors/ctrader
-    profiles: ["ctrader"]
     restart: unless-stopped
     environment:
       API_URL: http://backend:8000
@@ -109,10 +108,9 @@ services:
     security_opt: ["no-new-privileges:true"]
 
   capital:
-    # Capital.com REST API connector (enable with COMPOSE_PROFILES=capital in .env,
-    # or run deploy/setup-capital.sh).
+    # Capital.com REST API connector. Always running; idle unless Capital.com is the
+    # active broker chosen on the dashboard's Brokers page (credentials are set there too).
     build: ./connectors/capital
-    profiles: ["capital"]
     restart: unless-stopped
     environment:
       API_URL: http://backend:8000

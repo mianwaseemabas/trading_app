@@ -83,6 +83,19 @@ DEFAULTS: dict[str, Any] = {
     "reconciliation": {"ok": True, "detail": "", "at": ""},
     "bridge": {"last_seen": "", "ip": "", "terminal": {}, "version": ""},
     "notifications": {"telegram_enabled": False, "notify_signals": False, "notify_orders": True},
+    # Broker connections managed from the dashboard. Secret fields are stored encrypted (*_enc).
+    "brokers": {
+        "active": "none",  # none | capital | ctrader | mt5
+        "version": 1,
+        "allow_real": False,  # second switch (besides the live gate) for real-money orders
+        "max_volume": 0.10,  # hard cap per order in lots, enforced by the connector
+        "max_spread_points": 30,
+        "capital": {"environment": "demo", "identifier": "", "api_key_enc": "", "api_password_enc": "", "account_id": ""},
+        "ctrader": {"client_id": "", "client_secret_enc": "", "access_token_enc": "", "refresh_token_enc": "", "account_login": ""},
+    },
+    "connector_status": {},  # per connector: state, message, at
+    "external_positions": {"connector": "", "at": "", "positions": []},
+    "ai": {"provider": "none", "model": "", "api_key_enc": "", "enabled": False, "share_data": True},
 }
 
 # Risk settings where a larger value means more risk. Increases require password re-entry.

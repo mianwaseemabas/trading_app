@@ -65,6 +65,34 @@ IS_LIVE = CAP_ENV == "live"
 BASE = (BASE_LIVE if IS_LIVE else BASE_DEMO).rstrip("/") + "/api/v1"
 
 
+class Cfg:
+    """Runtime settings. Normally managed from the dashboard (Brokers page); .env values are a fallback."""
+    active = True
+    version = 0
+    identifier, api_key, api_password, account_id = CAP_IDENTIFIER, CAP_API_KEY, CAP_PASSWORD, CAP_ACCOUNT_ID
+    is_live, allow_real = IS_LIVE, ALLOW_REAL
+    max_volume, max_spread = MAX_VOLUME, MAX_SPREAD_POINTS
+
+    @classmethod
+    def base(cls) -> str:
+        return (BASE_LIVE if cls.is_live else BASE_DEMO).rstrip("/") + "/api/v1"
+
+    @classmethod
+    def apply(cls, d: dict) -> bool:
+        """Apply dashboard config; returns True when the connection must be re-established."""
+        before = (cls.identifier, cls.api_key, cls.api_password, cls.account_id, cls.is_live)
+        cls.active = bool(d.get("active"))
+        cls.version = d.get("version", 0)
+        if d.get("api_key") and d.get("identifier"):
+            cls.identifier, cls.api_key, cls.api_password = d["identifier"], d["api_key"], d.get("api_password", "")
+            cls.account_id = d.get("account_id", "")
+            cls.is_live = d.get("environment", "demo") == "live"
+        cls.allow_real = bool(d.get("allow_real"))
+        cls.max_volume = float(d.get("max_volume", cls.max_volume))
+        cls.max_spread = float(d.get("max_spread_points", cls.max_spread))
+        return before != (cls.identifier, cls.api_key, cls.api_password, cls.account_id, cls.is_live)
+
+
 class CapitalError(Exception):
     def __init__(self, status: int, message: str):
         super().__init__(f"HTTP {status}: {message}")
@@ -77,10 +105,11 @@ _app = requests.Session()
 
 def _headers(method: str, path: str, body: bytes) -> dict:
     ts, nonce = str(int(time.time())), secrets.token_hex(16)
-    msg = "\n".join([ts, nonce, method, path, hashlib.sha256(body).hexdigest()])
+    # The server signs the URL path only (no query string).
+    msg = "\n".join([ts, nonce, method, path.split("?")[0], hashlib.sha256(body).hexdigest()])
     sig = hmac.new(SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
     return {"X-Bridge-Key-Id": KEY_ID, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig,
-            "Content-Type": "application/json", "User-Agent": f"qivynex-capital-connector/{VERSION}"}
+            "Content-Type": "application/json", "User-Agent": f"qivynex-capital-connector/{VERSION}", "X-Connector": "capital"}
 
 
 def app(method: str, path: str, payload: dict | None = None) -> dict:
@@ -99,16 +128,16 @@ def verify_order_signature(o: dict) -> bool:
 
 # --------------------------------------------------------- Capital client
 class Capital:
-    def __init__(self, base: str = BASE):
-        self.base = base
+    def __init__(self, base: str | None = None):
+        self.base = base or Cfg.base()
         self.http = requests.Session()
         self.cst = self.xst = None
         self.last_call = 0.0
         self.session_info: dict = {}
 
     def login(self):
-        r = self.http.post(f"{self.base}/session", headers={"X-CAP-API-KEY": CAP_API_KEY, "Content-Type": "application/json"},
-                           json={"identifier": CAP_IDENTIFIER, "password": CAP_PASSWORD, "encryptedPassword": False}, timeout=30)
+        r = self.http.post(f"{self.base}/session", headers={"X-CAP-API-KEY": Cfg.api_key, "Content-Type": "application/json"},
+                           json={"identifier": Cfg.identifier, "password": Cfg.api_password, "encryptedPassword": False}, timeout=30)
         if r.status_code >= 400:
             raise CapitalError(r.status_code, self._err(r))
         self.cst, self.xst = r.headers.get("CST"), r.headers.get("X-SECURITY-TOKEN")
@@ -116,10 +145,10 @@ class Capital:
             raise CapitalError(r.status_code, "login response missing CST / X-SECURITY-TOKEN")
         self.session_info = r.json()
         self.last_call = time.time()
-        if CAP_ACCOUNT_ID and self.session_info.get("currentAccountId") != CAP_ACCOUNT_ID:
-            self.call("PUT", "/session", {"accountId": CAP_ACCOUNT_ID})
-        log.info("Logged in to Capital.com %s, account %s", "LIVE" if IS_LIVE else "demo",
-                 CAP_ACCOUNT_ID or self.session_info.get("currentAccountId"))
+        if Cfg.account_id and self.session_info.get("currentAccountId") != Cfg.account_id:
+            self.call("PUT", "/session", {"accountId": Cfg.account_id})
+        log.info("Logged in to Capital.com %s, account %s", "LIVE" if Cfg.is_live else "demo",
+                 Cfg.account_id or self.session_info.get("currentAccountId"))
 
     @staticmethod
     def _err(r) -> str:
@@ -135,7 +164,7 @@ class Capital:
         # Capital.com: max 10 requests/second per user.
         time.sleep(max(0.0, 0.12 - (time.time() - self.last_call)))
         r = self.http.request(method, f"{self.base}{path}", json=body, params=params, timeout=30,
-                              headers={"X-CAP-API-KEY": CAP_API_KEY, "CST": self.cst, "X-SECURITY-TOKEN": self.xst,
+                              headers={"X-CAP-API-KEY": Cfg.api_key, "CST": self.cst, "X-SECURITY-TOKEN": self.xst,
                                        "Content-Type": "application/json"})
         self.last_call = time.time()
         if r.status_code in (401, 403) and _retry:
@@ -346,13 +375,13 @@ class Connector:
     # -------------------------------------------------------- account
     def account_payload(self) -> dict:
         accs = self.cap.call("GET", "/accounts").get("accounts", [])
-        cur = CAP_ACCOUNT_ID or self.cap.session_info.get("currentAccountId")
+        cur = Cfg.account_id or self.cap.session_info.get("currentAccountId")
         acc = next((a for a in accs if a.get("accountId") == cur), None) or next((a for a in accs if a.get("preferred")), accs[0] if accs else {})
         b = acc.get("balance", {})
         balance, pl, avail = float(b.get("balance", 0)), float(b.get("profitLoss", 0)), float(b.get("available", 0))
         equity = balance + pl
-        return {"login": acc.get("accountId", ""), "server": f"Capital.com {'LIVE' if IS_LIVE else 'demo'} ({acc.get('accountName', '')})",
-                "trade_mode": 2 if IS_LIVE else 0, "currency": acc.get("currency", "USD"), "balance": round(balance, 2),
+        return {"login": acc.get("accountId", ""), "server": f"Capital.com {'LIVE' if Cfg.is_live else 'demo'} ({acc.get('accountName', '')})",
+                "trade_mode": 2 if Cfg.is_live else 0, "currency": acc.get("currency", "USD"), "balance": round(balance, 2),
                 "equity": round(equity, 2), "margin": round(max(0.0, equity - avail), 2), "margin_free": round(avail, 2),
                 "leverage": self.leverage}
 
@@ -392,6 +421,19 @@ class Connector:
                         "sl": float(sl) if sl else (self.state["ours"][pos["dealId"]].get("sl") or 0),
                         "tp": float(pos.get("profitLevel") or 0), "profit": float(pos.get("upl", 0)), "swap": 0,
                         "time": parse_utc(pos["createdDateUTC"]) if pos.get("createdDateUTC") else time.time()})
+        return out
+
+    def external_payload(self) -> list[dict]:
+        """Positions on the account NOT opened by the app (e.g. placed by hand) - shown read-only in the dashboard."""
+        out = []
+        for p in self.positions:
+            pos, mk = p.get("position", {}), p.get("market", {})
+            if pos.get("dealId") in self.state["ours"]:
+                continue
+            out.append({"ticket": pos.get("dealId"), "symbol": mk.get("epic") or mk.get("instrumentName"),
+                        "side": pos.get("direction"), "size": pos.get("size"), "open_price": pos.get("level"),
+                        "sl": pos.get("stopLevel"), "tp": pos.get("profitLevel"), "pnl": pos.get("upl"),
+                        "current": mk.get("bid") if pos.get("direction") == "BUY" else mk.get("offer")})
         return out
 
     def closed_payload(self) -> list[dict]:
@@ -436,12 +478,12 @@ class Connector:
             return "invalid order signature"
         if o.get("expires_at") and datetime.fromisoformat(o["expires_at"]) < datetime.now(timezone.utc):
             return "order expired"
-        if o["mode"] == "MT5_DEMO" and IS_LIVE:
+        if o["mode"] == "MT5_DEMO" and Cfg.is_live:
             return "order is for a DEMO account but the connector is on the LIVE environment"
-        if o["mode"] == "MT5_LIVE" and (not IS_LIVE or not ALLOW_REAL):
-            return "live order refused (demo environment or ALLOW_REAL_ACCOUNT=false)"
-        if o["volume"] <= 0 or o["volume"] > MAX_VOLUME:
-            return f"volume {o['volume']} outside connector limit {MAX_VOLUME} lots"
+        if o["mode"] == "MT5_LIVE" and (not Cfg.is_live or not Cfg.allow_real):
+            return "live order refused (demo environment or real-money orders not allowed in Brokers settings)"
+        if o["volume"] <= 0 or o["volume"] > Cfg.max_volume:
+            return f"volume {o['volume']} outside connector limit {Cfg.max_volume} lots"
         if o["symbol"] not in self.markets:
             return f"market {o['symbol']} not available"
         if o["action"] == "OPEN" and not o.get("stop_loss"):
@@ -496,8 +538,8 @@ class Connector:
         if problem:
             log.error(problem)
             return self.report(cid, status="REJECTED", error=f"connector: {problem}")
-        if spread_pts > MAX_SPREAD_POINTS:
-            return self.report(cid, status="REJECTED", error=f"connector: spread {spread_pts:.0f} pts > {MAX_SPREAD_POINTS}")
+        if spread_pts > Cfg.max_spread:
+            return self.report(cid, status="REJECTED", error=f"connector: spread {spread_pts:.0f} pts > {Cfg.max_spread}")
         size = m.size(o["volume"])
         if size < m.min_size:
             return self.report(cid, status="REJECTED", error=f"connector: size {size} below broker minimum {m.min_size}")
@@ -581,36 +623,74 @@ class Connector:
                 log.exception("Execution error for %s", o.get("client_id"))
                 self.report(o["client_id"], status="REJECTED", error=f"connector exception: {e}")
         self.load_positions()
-        app("POST", "/api/bridge/positions", {"positions": self.positions_payload(), "closed": self.closed_payload()})
+        app("POST", "/api/bridge/positions", {"positions": self.positions_payload(), "closed": self.closed_payload(),
+                                              "external": self.external_payload()})
+
+    def status(self, st: str, message: str = ""):
+        try:
+            app("POST", "/api/bridge/status", {"state": st, "message": message})
+        except Exception as e:
+            log.debug("status report failed: %s", e)
+
+    def sync_config(self) -> None:
+        """Pull settings from the dashboard; seed them from .env on first run."""
+        d = app("GET", "/api/bridge/config?connector=capital")
+        if not d.get("api_key") and CAP_API_KEY and CAP_IDENTIFIER and CAP_PASSWORD:
+            app("POST", "/api/bridge/seed", {"fields": {"identifier": CAP_IDENTIFIER, "api_key": CAP_API_KEY,
+                                                         "api_password": CAP_PASSWORD, "environment": CAP_ENV,
+                                                         "account_id": CAP_ACCOUNT_ID}})
+            log.info("Copied .env credentials into the dashboard settings (manage them on the Brokers page from now on)")
+            d = app("GET", "/api/bridge/config?connector=capital")
+        first = not hasattr(self, "_seen_version")
+        if Cfg.apply(d) or first:  # reconnect only when *this* broker's credentials/environment change
+            if not first:
+                log.info("Capital.com settings changed in the dashboard; reconnecting")
+            self._seen_version = Cfg.version
+            self.cap = Capital()
+            self.markets.clear()
+            self.last_bar.clear()
+            self.last_specs = 0.0
 
     def run(self):
-        if not (CAP_API_KEY and CAP_IDENTIFIER and CAP_PASSWORD):
-            raise SystemExit("Set CAPITAL_API_KEY, CAPITAL_IDENTIFIER (login email) and CAPITAL_API_PASSWORD")
         if len(SECRET) < 32:
             raise SystemExit("BRIDGE_SECRET must match the server .env (32+ chars)")
-        if IS_LIVE and not ALLOW_REAL:
-            log.warning("LIVE environment and ALLOW_REAL_ACCOUNT=false: orders will be refused; data will still flow.")
-        backoff = 5
+        backoff, idle_logged = 5, False
         while True:
             started = time.time()
             try:
+                self.sync_config()
+                if not Cfg.active:
+                    if not idle_logged:
+                        log.info("Capital.com is not the active broker (choose it on the Brokers page); waiting")
+                        idle_logged = True
+                    self.status("idle", "Not the active broker")
+                    time.sleep(15)
+                    continue
+                idle_logged = False
+                if not (Cfg.api_key and Cfg.identifier and Cfg.api_password):
+                    self.status("error", "Enter the Capital.com email, API key and API password on the Brokers page")
+                    time.sleep(15)
+                    continue
+                if Cfg.is_live and not Cfg.allow_real:
+                    log.warning("LIVE environment and real-money orders not allowed: orders will be refused; data still flows.")
                 self.cycle()
                 backoff = 5
             except CapitalError as e:
-                log.error("Capital.com error: %s", e)
+                msg = f"Capital.com error: {e}"
                 if e.status in (401, 403) or "invalid.details" in str(e) or "api.key" in str(e).lower():
-                    log.error("If this persists, check CAPITAL_API_KEY / CAPITAL_IDENTIFIER / CAPITAL_API_PASSWORD "
-                              "and that the API key is active (Settings > API integrations)")
+                    msg += " - check the email, API key and API password on the Brokers page and that the key is active"
+                log.error(msg)
+                self.status("error", msg)
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 120)
                 continue
             except Exception as e:
                 log.error("Cycle error: %s", e)
+                self.status("error", f"{e}"[:300])
             time.sleep(max(0.5, LOOP_SECONDS - (time.time() - started)))
-
 
 if __name__ == "__main__":
     try:
-        Connector().run()
+        Connector(cap=Capital(base="http://unused")).run()
     except KeyboardInterrupt:
         pass

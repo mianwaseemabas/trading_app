@@ -119,6 +119,8 @@ PERMISSIONS: dict[str, str] = {
     "risk.edit": "Change risk limits (increases need password confirmation)",
     "trading.control": "Switch trading mode (Off / Paper / MT5 Demo) and reset limit locks",
     "killswitch.use": "Engage or release the kill switch, close positions",
+    "trading.manual": "Place manual orders from the Live trading page (always risk-checked)",
+    "ai.use": "Use the AI assistant / trading coach",
     "live.approve": "Approve live-trading gate and enable MT5 Live mode",
     "users.manage": "Create and manage users and permissions",
     "audit.view": "View audit trail and system events",
@@ -126,8 +128,8 @@ PERMISSIONS: dict[str, str] = {
 }
 
 ROLE_PRESETS: dict[str, list[str]] = {
-    "viewer": ["dashboard.view", "market.view", "signals.view", "trades.view"],
-    "analyst": ["dashboard.view", "market.view", "signals.view", "trades.view", "backtest.run"],
+    "viewer": ["dashboard.view", "market.view", "signals.view", "trades.view", "ai.use"],
+    "analyst": ["dashboard.view", "market.view", "signals.view", "trades.view", "backtest.run", "ai.use"],
     "operator": [
         "dashboard.view",
         "market.view",
@@ -136,6 +138,8 @@ ROLE_PRESETS: dict[str, list[str]] = {
         "backtest.run",
         "trading.control",
         "killswitch.use",
+        "trading.manual",
+        "ai.use",
     ],
     "admin": list(PERMISSIONS.keys()),
 }

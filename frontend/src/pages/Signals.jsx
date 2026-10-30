@@ -24,6 +24,7 @@ export function SignalDetail({ id, onClose }) {
             <Badge tone={statusTone(s.action)}>{s.action}</Badge>
             <Badge tone={statusTone(s.status)}>{s.status}</Badge>
             <span>{s.symbol} {s.timeframe} · candle {fmt.dt(s.candle_time)} · {s.strategy} v{s.strategy_version} · mode {s.trading_mode}</span>
+            <a className="btn sm ghost" href={`#/assistant?q=${encodeURIComponent(`Explain signal #${s.id}: ${s.symbol} ${s.timeframe} ${s.action}, status ${s.status}. Conditions: ${JSON.stringify(s.reasons)}. Risk checks: ${JSON.stringify((s.risk_checks || []).filter((c) => !c.passed))}. Explain in simple words what happened and what I can learn.`)}`} onClick={onClose}>✦ Ask AI to explain</a>
           </div>
           {s.action !== "NONE" && (
             <div className="grid stats">

@@ -26,6 +26,19 @@ MT5 terminal (Windows) ──HTTPS + HMAC──►  nginx ─► FastAPI ─► 
    └── signed orders ◄──────────────────────┘     worker (engine)
 ```
 
+## Dashboard pages
+
+| Page | What it's for |
+|---|---|
+| Dashboard | Mode switch (Off / Signals / Paper / Broker demo / Broker live), kill switch, loss limits, quotes |
+| Live trading | Real-time equity and P&L, open positions, **New order** ticket (risk-checked), activity feed, positions opened outside the app |
+| Market / Signals / Trades | Charts with indicators, every signal with its reasons and risk checks, orders and performance |
+| Backtest | Strategy tests on broker history, with costs and robustness warnings |
+| Risk & Strategy | Risk limits, strategy parameters, live-trading gate |
+| Brokers | Enter credentials, choose the active broker, demo or live, connector limits, connection status |
+| AI Assistant | Your own OpenAI / Claude key; a coach that explains your data and teaches. It can't trade |
+| Guide | Getting-started checklist, how the app decides, daily routine, glossary |
+
 ## Security
 
 - **No sign-up.** Only users with `users.manage` can create accounts. First admin is created by the installer.
@@ -39,6 +52,9 @@ MT5 terminal (Windows) ──HTTPS + HMAC──►  nginx ─► FastAPI ─► 
 - **Append-only audit log** enforced by a PostgreSQL trigger (UPDATE/DELETE rejected).
 - Bridge API: HMAC-SHA256 signed requests, 30 s clock-skew window, single-use nonces, optional IP allowlist. Orders carry their own HMAC signature which the bridge verifies.
 - Strict CSP and security headers, containers run read-only, non-root, DB never exposed.
+- Broker credentials and AI keys are encrypted in the database (Fernet, key derived from `SECRET_KEY`), never returned
+  to the browser, and served only to the connector containers on the private Docker network.
+- Only the broker selected on the Brokers page can feed data or receive orders (enforced by the server).
 
 ## Trading safety controls (from the plan)
 
@@ -92,8 +108,9 @@ and variables → Actions. From then on every push to `main` runs the tests and,
 
 - **Try it without a broker:** System → Data source → *Simulator* (synthetic prices, clearly labelled). Set mode
   to `PAPER` to watch signals, risk checks and paper fills. Never judge the strategy on simulated data.
-- **Real data with Capital.com:** follow `connectors/capital/README.md`, then run
-  `sudo /opt/trading_app/deploy/setup-capital.sh` and choose System → *Use broker data*.
+- **Connect a broker from the dashboard:** open **Brokers**, enter your Capital.com (or cTrader) demo
+  credentials, click *Use this broker*. No server commands needed; credentials are stored encrypted.
+- **Real data with Capital.com:** see `connectors/capital/README.md` for creating the API key.
 - **Real data with cTrader:** follow `connectors/ctrader/README.md`, then run
   `sudo /opt/trading_app/deploy/setup-ctrader.sh` and choose System → *Use broker data*.
 - **Real data with MT5:** set up the Windows bridge (`bridge/README.md`) and choose *Use broker data*.

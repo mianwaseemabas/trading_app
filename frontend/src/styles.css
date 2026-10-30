@@ -187,6 +187,31 @@ tr.click:hover td { background: var(--panel2); }
 .c-fast { color: #f2b443; }
 .c-slow { color: #b388ff; }
 
+/* live trading */
+.btn.buy { background: var(--ok); border-color: var(--ok); color: #04170f; }
+.btn.sell { background: var(--bad); border-color: var(--bad); color: #fff; }
+.spark { display: block; margin-top: 4px; }
+.feed { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; }
+.feed li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.feed li > :last-child { margin-left: auto; }
+/* assistant */
+.chat { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow: auto; padding: 4px 2px 12px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; line-height: 1.5; }
+.msg.user { align-self: flex-end; background: rgba(76, 194, 255, 0.15); border: 1px solid rgba(76, 194, 255, 0.35); }
+.msg.assistant { align-self: flex-start; background: var(--panel2); border: 1px solid var(--line2); }
+.msg.err { border-color: rgba(255, 93, 108, 0.5); }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.quick p { width: 100%; margin: 0 0 4px; }
+.grow { flex: 1; }
+/* guide */
+.steps { list-style: none; padding: 0; margin: 0; }
+.steps li { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.steps .tick { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line2); display: grid; place-items: center; flex: none; color: var(--muted); }
+.steps li.ok .tick { background: var(--ok); border-color: var(--ok); color: #04170f; font-weight: 700; }
+.dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 13px; }
+.dl dt { font-weight: 600; }
+.dl dd { margin: 0; color: var(--muted); }
+
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 8px; }

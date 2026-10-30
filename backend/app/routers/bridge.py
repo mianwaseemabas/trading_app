@@ -26,7 +26,9 @@ from ..deps import client_ip
 from ..models import AccountSnapshot, BridgeNonce, Instrument, Order, Position, Quote, utcnow
 from ..services import market_data as md
 from ..services.notifier import notify
+from ..secretbox import decrypt, encrypt
 from ..services.trading import order_payload
+import ipaddress
 
 router = APIRouter(prefix="/api/bridge", tags=["bridge"])
 
@@ -58,11 +60,100 @@ async def bridge_auth(request: Request, db: Session = Depends(get_db)) -> dict:
     except IntegrityError:
         db.rollback()
         raise HTTPException(401, "Replayed nonce")
-    b = state.get(db, "bridge")
-    b.update(last_seen=utcnow().isoformat(), ip=ip)
-    state.put(db, "bridge", b)
+    connector = (request.headers.get("x-connector") or "mt5").lower()
+    path = request.url.path
+    if path in INTERNAL_PATHS:
+        _internal_only(request)
+    elif connector != state.get(db, "brokers")["active"]:
+        # Only the broker selected in the dashboard may feed data or receive orders.
+        raise HTTPException(409, f"Connector '{connector}' is not the active broker")
+    if path not in INTERNAL_PATHS:
+        b = state.get(db, "bridge")
+        b.update(last_seen=utcnow().isoformat(), ip=ip, connector=connector)
+        state.put(db, "bridge", b)
+        db.commit()
+    return {"ip": ip, "connector": connector}
+
+
+INTERNAL_PATHS = {"/api/bridge/config", "/api/bridge/status", "/api/bridge/seed"}
+
+
+def _internal_only(request: Request) -> None:
+    """Credentials are only served to connectors on the server's private Docker network."""
+    if request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for"):
+        raise HTTPException(403, "Not available through the public proxy")
+    host = request.client.host if request.client else ""
+    if host == "testclient" and settings.is_dev:
+        return
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        raise HTTPException(403, "Internal endpoint")
+    if not (ip.is_private or ip.is_loopback):
+        raise HTTPException(403, "Internal endpoint")
+
+
+def _set_status(db: Session, connector: str, st: str, message: str = "", account: dict | None = None) -> None:
+    cs = state.get(db, "connector_status")
+    cur = cs.get(connector, {})
+    cur.update(state=st, message=message[:500], at=utcnow().isoformat())
+    if account is not None:
+        cur["account"] = account
+    cs[connector] = cur
+    state.put(db, "connector_status", cs)
+
+
+@router.get("/config")
+def connector_config(connector: str, auth=Depends(bridge_auth), db: Session = Depends(get_db)):
+    cfg = state.get(db, "brokers")
+    gate = state.get(db, "live_gate")
+    c = cfg.get(connector, {})
+    out = {"active": cfg["active"] == connector, "version": cfg.get("version", 1),
+           "allow_real": bool(cfg.get("allow_real") and gate.get("approved")),
+           "max_volume": cfg.get("max_volume", 0.10), "max_spread_points": cfg.get("max_spread_points", 30)}
+    for k, v in c.items():
+        if k.endswith("_enc"):
+            out[k[:-4]] = decrypt(v)
+        else:
+            out[k] = v
+    return out
+
+
+@router.post("/status")
+async def connector_status(request: Request, auth=Depends(bridge_auth), db: Session = Depends(get_db)):
+    body = await request.json()
+    _set_status(db, auth["connector"], str(body.get("state", "unknown"))[:20], str(body.get("message", "")))
     db.commit()
-    return {"ip": ip}
+    return {"status": "ok"}
+
+
+@router.post("/seed")
+async def seed(request: Request, auth=Depends(bridge_auth), db: Session = Depends(get_db)):
+    """First-run migration: credentials that were set in .env are copied into the dashboard settings."""
+    body = await request.json()
+    name = auth["connector"]
+    cfg = state.get_locked(db, "brokers")
+    if name not in ("capital", "ctrader"):
+        raise HTTPException(400, "Unknown connector")
+    from .brokers import configured
+    if configured(name, cfg):
+        return {"status": "already_configured"}
+    c = dict(cfg.get(name, {}))
+    for k, v in (body.get("fields") or {}).items():
+        if v in (None, ""):
+            continue
+        if k in ("api_key", "api_password", "client_secret", "access_token", "refresh_token"):
+            c[f"{k}_enc"] = encrypt(str(v))
+        elif k in ("identifier", "account_id", "environment", "client_id", "account_login"):
+            c[k] = str(v)
+    cfg[name] = c
+    if cfg["active"] == "none":
+        cfg["active"] = name
+    cfg["version"] = int(cfg.get("version", 1)) + 1
+    state.put(db, "brokers", cfg)
+    audit(db, "broker.seeded_from_env", details={"connector": name, "active": cfg["active"]})
+    db.commit()
+    return {"status": "seeded", "active": cfg["active"] == name}
 
 
 def _ts(v) -> datetime:
@@ -87,6 +178,9 @@ async def heartbeat(request: Request, auth=Depends(bridge_auth), db: Session = D
     b = state.get(db, "bridge")
     b.update(terminal=body.get("terminal") or {}, version=str(body.get("version", "")))
     state.put(db, "bridge", b)
+    _set_status(db, auth["connector"], "connected", "", {
+        "login": str(acc.get("login", "")), "server": str(acc.get("server", "")), "trade_mode": trade_mode,
+        "currency": acc.get("currency"), "balance": acc.get("balance"), "equity": acc.get("equity")})
     db.commit()
     tr = state.get(db, "trading")
     return {"status": "ok", "mode": tr["mode"], "kill_switch": tr["kill_switch"],
@@ -212,6 +306,8 @@ async def positions(request: Request, auth=Depends(bridge_auth), db: Session = D
     Reconciles local records with the broker; any unexplained difference blocks new trades.
     """
     body = await request.json()
+    state.put(db, "external_positions", {"connector": auth["connector"], "at": utcnow().isoformat(),
+                                         "positions": (body.get("external") or [])[:100]})
     acc_mode = state.get(db, "trading")["mode"]
     mode = acc_mode if acc_mode in ("MT5_DEMO", "MT5_LIVE") else body.get("mode_hint", "MT5_DEMO")
     broker = {str(p["ticket"]): p for p in body.get("positions", [])}

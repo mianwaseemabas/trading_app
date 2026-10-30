@@ -153,3 +153,40 @@ def test_history_errors_do_not_block_cycle(conn, monkeypatch):
         raise cc.CapitalError(500, "server down")
     monkeypatch.setattr(conn, "candles", boom)
     conn.push_candles()  # must not raise
+
+
+def test_dashboard_config_seed_and_reconnect(conn, monkeypatch):
+    calls = []
+    cfg = {"active": True, "version": 3, "allow_real": False, "max_volume": 0.05, "max_spread_points": 20}
+
+    def fake_app(method, path, payload=None):
+        calls.append((method, path, payload))
+        if path.startswith("/api/bridge/config"):
+            return dict(cfg)
+        if path == "/api/bridge/seed":
+            cfg.update(identifier=payload["fields"]["identifier"], api_key=payload["fields"]["api_key"],
+                       api_password=payload["fields"]["api_password"], environment="demo")
+            return {"status": "seeded"}
+        return {}
+    monkeypatch.setattr(cc, "app", fake_app)
+    conn.sync_config()
+    assert any(p == "/api/bridge/seed" for _, p, _ in calls)  # .env credentials copied to the dashboard once
+    assert cc.Cfg.max_volume == 0.05 and cc.Cfg.max_spread == 20 and cc.Cfg.active
+    first_client = conn.cap
+    calls.clear()
+    conn.sync_config()
+    assert conn.cap is first_client and not any(p == "/api/bridge/seed" for _, p, _ in calls)
+    cfg.update(version=4, api_password="changed")  # changed on the Brokers page
+    conn.sync_config()
+    assert conn.cap is not first_client and cc.Cfg.api_password == "changed"
+    # Volume cap from the dashboard is enforced by the connector.
+    assert "outside connector limit 0.05" in conn.validate(order(volume=0.06))
+    cc.Cfg.max_volume, cc.Cfg.max_spread, cc.Cfg.api_password = 0.10, 30, "apipass"
+
+
+def test_manual_positions_reported_as_external(conn):
+    mock.STATE["positions"]["manual1"] = {"position": {"dealId": "manual1", "size": 500, "direction": "SELL", "level": 1.27,
+                                                       "upl": 1.5, "contractSize": 1}, "market": {"epic": "GBPUSD", "bid": 1.269, "offer": 1.2691}}
+    conn.load_positions()
+    ext = conn.external_payload()
+    assert [e["ticket"] for e in ext] == ["manual1"] and conn.positions_payload() == []

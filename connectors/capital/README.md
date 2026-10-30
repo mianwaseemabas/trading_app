@@ -13,14 +13,12 @@ It runs as a Docker container on the Linux VPS. There's no approval wait: you ca
    - Expiry: optional (default 1 year)
 4. Enter your 2FA code. **Copy the API key immediately**; it is shown only once.
 
-## 2. Connect it on the VPS
+## 2. Connect it in the dashboard
 
-```bash
-sudo /opt/trading_app/deploy/update.sh          # make sure the latest code is installed
-sudo /opt/trading_app/deploy/setup-capital.sh   # enter: login email, API key, API key password, "demo"
-```
-
-The values go into `/opt/trading_app/.env` (readable by root only). A working connection logs:
+**Brokers** page → Capital.com card: enter your login email, the API key and the API key password, keep
+Environment = **Demo**, click **Save credentials**, then **Use this broker**. The status badge turns green within
+a few seconds. (Older alternative: `sudo /opt/trading_app/deploy/setup-capital.sh` writes them to `.env`; they are
+copied into the dashboard automatically.) A working connection logs (`docker compose logs capital`):
 
 ```
 Logged in to Capital.com demo, account ...

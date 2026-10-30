@@ -4,6 +4,8 @@
 # Needs: your Capital.com login email, an API key and the API key's custom password
 # (Capital.com -> Settings -> API integrations -> Generate API key).
 set -euo pipefail
+echo "Tip: you can now enter broker credentials on the dashboard (Brokers page) instead of this script."
+echo "Values entered here are only used if the dashboard has none for this broker yet."
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_DIR"
 [[ -f .env ]] || { echo "Run deploy/install.sh first"; exit 1; }

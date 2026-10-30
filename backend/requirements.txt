@@ -5,3 +5,4 @@ psycopg[binary]>=3.2,<4
 pandas>=2.2
 numpy>=1.26
 python-multipart>=0.0.9
+cryptography>=42

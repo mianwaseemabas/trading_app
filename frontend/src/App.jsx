@@ -11,17 +11,25 @@ import Users from "./pages/Users.jsx";
 import Audit from "./pages/Audit.jsx";
 import Settings from "./pages/Settings.jsx";
 import Account, { TwoFactorSetup } from "./pages/Account.jsx";
+import Live from "./pages/Live.jsx";
+import Brokers from "./pages/Brokers.jsx";
+import Assistant from "./pages/Assistant.jsx";
+import Guide from "./pages/Guide.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard },
+  { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live },
   { k: "market", label: "Market", icon: "◫", perm: "market.view", el: Market },
   { k: "signals", label: "Signals", icon: "◇", perm: "signals.view", el: Signals },
   { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades },
   { k: "backtest", label: "Backtest", icon: "↺", perm: "backtest.run", el: Backtest },
   { k: "risk", label: "Risk & Strategy", icon: "⛨", perm: "dashboard.view", el: RiskStrategy },
+  { k: "brokers", label: "Brokers", icon: "⇄", perm: "dashboard.view", el: Brokers },
+  { k: "assistant", label: "AI Assistant", icon: "✦", perm: "ai.use", el: Assistant },
+  { k: "guide", label: "Guide", icon: "?", perm: null, el: Guide },
   { k: "users", label: "Users", icon: "☰", perm: "users.manage", el: Users },
   { k: "audit", label: "Audit & Events", icon: "⌘", perm: "audit.view", el: Audit },
   { k: "settings", label: "System", icon: "⚙", perm: "system.settings", el: Settings },

@@ -84,6 +84,10 @@ MARKET = 1
 SIDE_NAMES = {1: "BUY", 2: "SELL", "BUY": "BUY", "SELL": "SELL"}
 
 
+class ConfigMissing(Exception):
+    pass
+
+
 class CTraderError(Exception):
     def __init__(self, code: str, description: str = ""):
         super().__init__(f"{code}: {description}")
@@ -107,10 +111,11 @@ _http = requests.Session()
 
 def _headers(method: str, path: str, body: bytes) -> dict:
     ts, nonce = str(int(time.time())), secrets.token_hex(16)
-    msg = "\n".join([ts, nonce, method, path, hashlib.sha256(body).hexdigest()])
+    # The server signs the URL path only (no query string).
+    msg = "\n".join([ts, nonce, method, path.split("?")[0], hashlib.sha256(body).hexdigest()])
     sig = hmac.new(SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
     return {"X-Bridge-Key-Id": KEY_ID, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig,
-            "Content-Type": "application/json", "User-Agent": f"qivynex-ctrader-connector/{VERSION}"}
+            "Content-Type": "application/json", "User-Agent": f"qivynex-ctrader-connector/{VERSION}", "X-Connector": "ctrader"}
 
 
 def _app_call(method: str, path: str, payload: dict | None = None) -> dict:
@@ -131,15 +136,42 @@ def verify_order_signature(o: dict) -> bool:
     return hmac.compare_digest(hmac.new(SECRET.encode(), msg, hashlib.sha256).hexdigest(), o.get("signature", ""))
 
 
+class Cfg:
+    """Runtime settings, normally managed on the dashboard's Brokers page (.env values are a fallback)."""
+    active = True
+    version = 0
+    client_id, client_secret, access_token, refresh_token, account_login = CLIENT_ID, CLIENT_SECRET, ACCESS_TOKEN, REFRESH_TOKEN, ACCOUNT_LOGIN
+    allow_real, max_volume, max_spread = ALLOW_REAL, MAX_VOLUME, MAX_SPREAD_POINTS
+
+    @classmethod
+    def apply(cls, d: dict) -> bool:
+        before = (cls.client_id, cls.client_secret, cls.access_token, cls.refresh_token, cls.account_login)
+        cls.active, cls.version = bool(d.get("active")), d.get("version", 0)
+        if d.get("client_id") and d.get("access_token"):
+            cls.client_id, cls.client_secret = d["client_id"], d.get("client_secret", "")
+            cls.access_token, cls.refresh_token = d["access_token"], d.get("refresh_token", "")
+            cls.account_login = d.get("account_login", "")
+        cls.allow_real = bool(d.get("allow_real"))
+        cls.max_volume = float(d.get("max_volume", cls.max_volume))
+        cls.max_spread = float(d.get("max_spread_points", cls.max_spread))
+        return before != (cls.client_id, cls.client_secret, cls.access_token, cls.refresh_token, cls.account_login)
+
+
 # ---------------------------------------------------------------- tokens
+def _source_id() -> str:
+    return hashlib.sha256(f"{Cfg.access_token}|{Cfg.refresh_token}".encode()).hexdigest()[:16]
+
+
 def load_tokens() -> dict:
+    """Use tokens refreshed earlier by this connector, unless new tokens were entered in the dashboard."""
     try:
         st = json.loads(STATE_FILE.read_text())
-        if st.get("access_token") and st.get("refresh_token"):
+        if st.get("access_token") and st.get("refresh_token") and st.get("source") == _source_id():
             return st
     except (OSError, ValueError):
         pass
-    return {"access_token": ACCESS_TOKEN, "refresh_token": REFRESH_TOKEN, "refreshed_at": 0}
+    # Tokens from the Playground are fresh: refresh after 20 days, or earlier if cTrader rejects them.
+    return {"access_token": Cfg.access_token, "refresh_token": Cfg.refresh_token, "refreshed_at": time.time(), "source": _source_id()}
 
 
 def save_tokens(st: dict) -> None:
@@ -280,10 +312,9 @@ class Connector:
 
     # ---------------------------------------------------------- session
     async def start(self):
-        if not (CLIENT_ID and CLIENT_SECRET and self.tokens["access_token"]):
-            raise SystemExit("Set CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET and CTRADER_ACCESS_TOKEN/CTRADER_REFRESH_TOKEN")
-        if len(SECRET) < 32:
-            raise SystemExit("BRIDGE_SECRET must match the server .env (32+ chars)")
+        self.tokens = load_tokens()
+        if not (Cfg.client_id and Cfg.client_secret and self.tokens["access_token"]):
+            raise ConfigMissing("Enter the cTrader client ID, client secret and tokens on the Brokers page")
         # Discover the account (and whether it is demo or live) using the demo host first.
         accounts = await self._list_accounts()
         acc = self._pick_account(accounts)
@@ -292,7 +323,7 @@ class Connector:
         self.st.login = i(acc.get("traderLogin"))
         self.st.broker = acc.get("brokerTitleShort", "")
         log.info("Using cTrader account %s (%s) at %s", self.st.login, "LIVE" if self.st.is_live else "demo", self.st.broker)
-        if self.st.is_live and not ALLOW_REAL:
+        if self.st.is_live and not Cfg.allow_real:
             log.warning("LIVE account selected and ALLOW_REAL_ACCOUNT=false: orders will be refused; data will still flow.")
         await self._open(HOST_LIVE if self.st.is_live else HOST_DEMO)
 
@@ -300,7 +331,7 @@ class Connector:
         c = Client(HOST_DEMO)
         await c.connect()
         try:
-            await c.send(PT["APP_AUTH_REQ"], {"clientId": CLIENT_ID, "clientSecret": CLIENT_SECRET})
+            await c.send(PT["APP_AUTH_REQ"], {"clientId": Cfg.client_id, "clientSecret": Cfg.client_secret})
             try:
                 res = await c.send(PT["ACCOUNTS_BY_TOKEN_REQ"], {"accessToken": self.tokens["access_token"]})
             except CTraderError as e:
@@ -314,24 +345,25 @@ class Connector:
 
     def _pick_account(self, accounts: list[dict]) -> dict:
         if not accounts:
-            raise SystemExit("The access token has no trading accounts. Grant access to your account in the Playground.")
+            raise ConfigMissing("The access token has no trading accounts. Grant access to your account in the Playground.")
         for a in accounts:
             log.info("  account login %s  live=%s  broker=%s", a.get("traderLogin"), a.get("isLive", False), a.get("brokerTitleShort"))
-        if ACCOUNT_LOGIN:
+        if Cfg.account_login:
             for a in accounts:
-                if str(a.get("traderLogin")) == ACCOUNT_LOGIN.strip():
+                if str(a.get("traderLogin")) == Cfg.account_login.strip():
                     return a
-            raise SystemExit(f"Account {ACCOUNT_LOGIN} not found for this token")
+            raise ConfigMissing(f"Account {Cfg.account_login} not found for this token")
         demos = [a for a in accounts if not a.get("isLive")]
         if len(demos) == 1:
             return demos[0]
-        raise SystemExit("Several accounts available: set CTRADER_ACCOUNT_LOGIN to the account number to use")
+        raise ConfigMissing("Several accounts available: enter the account number on the Brokers page")
 
     async def _refresh(self, c: Client):
         if not self.tokens.get("refresh_token"):
-            raise SystemExit("Access token expired and no refresh token configured")
+            raise ConfigMissing("Access token expired and no refresh token configured")
         res = await c.send(PT["REFRESH_TOKEN_REQ"], {"refreshToken": self.tokens["refresh_token"]})
-        self.tokens = {"access_token": res["accessToken"], "refresh_token": res["refreshToken"], "refreshed_at": time.time()}
+        self.tokens = {"access_token": res["accessToken"], "refresh_token": res["refreshToken"], "refreshed_at": time.time(),
+                       "source": self.tokens.get("source", _source_id())}
         save_tokens(self.tokens)
         log.info("Access token refreshed and saved")
 
@@ -341,7 +373,7 @@ class Connector:
         self.client.listeners.append(self._on_event)
         await self.client.connect()
         c = self.client
-        await c.send(PT["APP_AUTH_REQ"], {"clientId": CLIENT_ID, "clientSecret": CLIENT_SECRET})
+        await c.send(PT["APP_AUTH_REQ"], {"clientId": Cfg.client_id, "clientSecret": Cfg.client_secret})
         # Refresh proactively every 20 days (tokens last ~30 days).
         if time.time() - float(self.tokens.get("refreshed_at") or 0) > 20 * 86400 and self.tokens.get("refresh_token"):
             await self._refresh(c)
@@ -504,8 +536,25 @@ class Connector:
                         "volume": s.lots(i(td["volume"])), "price_open": float(p.get("price", 0)),
                         "sl": float(p["stopLoss"]) if p.get("stopLoss") else 0, "tp": float(p["takeProfit"]) if p.get("takeProfit") else 0,
                         "profit": self._pnl.get(pid, 0.0), "swap": 0,
+                        "price_current": (lambda q: (q[0] if SIDE_NAMES.get(td.get("tradeSide")) == "BUY" else q[1]) if q else None)(
+                            self.st.quotes.get(s.symbol_id)),
                         "time": i(td.get("openTimestamp")) / 1000 if td.get("openTimestamp") else time.time(),
                         "comment": td.get("comment", "")})
+        return out
+
+    def external_payload(self) -> list[dict]:
+        """Positions not opened by the app (e.g. placed by hand) - shown read-only in the dashboard."""
+        out = []
+        for p in getattr(self, "_positions", []):
+            td = p["tradeData"]
+            if td.get("label") == LABEL:
+                continue
+            s = self.st.by_id.get(i(td["symbolId"]))
+            pid = i(p["positionId"])
+            out.append({"ticket": pid, "symbol": s.app_name if s else str(td.get("symbolId")),
+                        "side": SIDE_NAMES.get(td.get("tradeSide"), "?"), "size": s.lots(i(td["volume"])) if s else i(td["volume"]),
+                        "open_price": p.get("price"), "sl": p.get("stopLoss"), "tp": p.get("takeProfit"),
+                        "pnl": getattr(self, "_pnl", {}).get(pid)})
         return out
 
     async def closed_deals(self) -> list[dict]:
@@ -538,10 +587,10 @@ class Connector:
             return "order expired"
         if o["mode"] == "MT5_DEMO" and self.st.is_live:
             return "order is for a DEMO account but the connected cTrader account is LIVE"
-        if o["mode"] == "MT5_LIVE" and (not self.st.is_live or not ALLOW_REAL):
-            return "live order refused (account is demo or ALLOW_REAL_ACCOUNT=false)"
-        if o["volume"] <= 0 or o["volume"] > MAX_VOLUME:
-            return f"volume {o['volume']} outside connector limit {MAX_VOLUME}"
+        if o["mode"] == "MT5_LIVE" and (not self.st.is_live or not Cfg.allow_real):
+            return "live order refused (account is demo or real-money orders not allowed in Brokers settings)"
+        if o["volume"] <= 0 or o["volume"] > Cfg.max_volume:
+            return f"volume {o['volume']} outside connector limit {Cfg.max_volume}"
         if o["symbol"] not in self.st.symbols:
             return f"symbol {o['symbol']} not available"
         if o["action"] == "OPEN":
@@ -589,8 +638,8 @@ class Connector:
         bid, ask, ts = self.st.quotes.get(s.symbol_id, (0, 0, 0))
         if bid <= 0 or time.time() - ts > 120:
             return await self.report(cid, status="REJECTED", error="connector: no fresh quote")
-        if o["action"] == "OPEN" and (ask - bid) / s.point > MAX_SPREAD_POINTS:
-            return await self.report(cid, status="REJECTED", error=f"connector: spread {(ask - bid) / s.point:.0f} pts > {MAX_SPREAD_POINTS}")
+        if o["action"] == "OPEN" and (ask - bid) / s.point > Cfg.max_spread:
+            return await self.report(cid, status="REJECTED", error=f"connector: spread {(ask - bid) / s.point:.0f} pts > {Cfg.max_spread}")
         acc = self.st.account_id
 
         if o["action"] == "CLOSE":
@@ -685,35 +734,71 @@ class Connector:
                 log.exception("Execution error for %s", o.get("client_id"))
                 await self.report(o["client_id"], status="REJECTED", error=f"connector exception: {e}")
         await self.account_payload()  # refresh positions after executions
-        await app("POST", "/api/bridge/positions", {"positions": self.positions_payload(), "closed": await self.closed_deals()})
+        await app("POST", "/api/bridge/positions", {"positions": self.positions_payload(), "closed": await self.closed_deals(),
+                                                    "external": self.external_payload()})
+
+    async def status(self, st: str, message: str = ""):
+        try:
+            await app("POST", "/api/bridge/status", {"state": st, "message": message})
+        except Exception:
+            pass
+
+    async def sync_config(self) -> bool:
+        """Pull settings from the dashboard (seeding them from .env once). Returns True if a reconnect is needed."""
+        d = await app("GET", "/api/bridge/config?connector=ctrader")
+        if not d.get("access_token") and CLIENT_ID and ACCESS_TOKEN:
+            await app("POST", "/api/bridge/seed", {"fields": {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+                                                               "access_token": ACCESS_TOKEN, "refresh_token": REFRESH_TOKEN,
+                                                               "account_login": ACCOUNT_LOGIN}})
+            log.info("Copied .env credentials into the dashboard settings (manage them on the Brokers page from now on)")
+            d = await app("GET", "/api/bridge/config?connector=ctrader")
+        return Cfg.apply(d)  # True only when *this* broker's credentials change
 
     async def run(self):
-        backoff = 5
+        if len(SECRET) < 32:
+            raise SystemExit("BRIDGE_SECRET must match the server .env (32+ chars)")
+        backoff, idle_logged = 5, False
         while True:
             try:
+                await self.sync_config()
+                if not Cfg.active:
+                    if not idle_logged:
+                        log.info("cTrader is not the active broker (choose it on the Brokers page); waiting")
+                        idle_logged = True
+                    await self.status("idle", "Not the active broker")
+                    await asyncio.sleep(15)
+                    continue
+                idle_logged = False
+                await self.status("connecting", "Connecting to cTrader")
                 await self.start()
                 backoff = 5
                 while not self.client.closed.is_set():
                     started = time.time()
+                    if await self.sync_config() or not Cfg.active:
+                        log.info("cTrader settings changed or broker deactivated in the dashboard; reconnecting")
+                        break
                     try:
                         await self.cycle()
                     except (ConnectionError, websockets.ConnectionClosed):
                         raise
                     except Exception as e:
                         log.error("Cycle error: %s", e)
+                        await self.status("error", str(e)[:300])
                     await asyncio.sleep(max(0.5, LOOP_SECONDS - (time.time() - started)))
-            except SystemExit:
-                raise
+            except ConfigMissing as e:
+                log.error("%s", e)
+                await self.status("error", str(e))
+                await asyncio.sleep(30)
             except Exception as e:
                 log.error("Connection error: %s (retrying in %ss)", e, backoff)
+                await self.status("error", f"Connection error: {e}"[:300])
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 120)
             try:
                 if self.client:
                     await self.client.close()
             except Exception:
                 pass
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 120)
-
 
 if __name__ == "__main__":
     try:

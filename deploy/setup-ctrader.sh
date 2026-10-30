@@ -4,6 +4,8 @@
 # Asks for the credentials from https://openapi.ctrader.com (your app -> Credentials / Playground),
 # stores them in .env (chmod 600) and starts the "ctrader" connector container.
 set -euo pipefail
+echo "Tip: you can now enter broker credentials on the dashboard (Brokers page) instead of this script."
+echo "Values entered here are only used if the dashboard has none for this broker yet."
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_DIR"
 [[ -f .env ]] || { echo "Run deploy/install.sh first"; exit 1; }

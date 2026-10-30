@@ -18,7 +18,12 @@ Windows machine is needed.
 
 Keep these private. Anyone with them can trade on your account.
 
-## 2. Connect it on the VPS
+## 2. Connect it in the dashboard
+
+**Brokers** page → cTrader card: paste Client ID, Client secret, access token and refresh token, click **Save
+credentials**, then **Use this broker**.
+
+Alternative (command line):
 
 ```bash
 sudo /opt/trading_app/deploy/update.sh          # get the latest code

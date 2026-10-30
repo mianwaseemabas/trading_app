@@ -126,6 +126,10 @@ def test_bridge_auth_and_mt5_flow(db):
     b = TestClient(app)
     c.post("/api/system/mode", json={"mode": "OFF"})
     assert c.put("/api/system/data", json={"source": "mt5"}).status_code == 200
+    # Only the broker selected in the dashboard may talk to the bridge API.
+    body0 = b"{}"
+    assert b.post("/api/bridge/heartbeat", content=body0, headers=_signed("POST", "/api/bridge/heartbeat", body0)).status_code == 409
+    assert c.post("/api/brokers/activate", json={"name": "mt5", "password": PW}).status_code == 200
 
     # Bad signature and replay are rejected.
     h = _signed("POST", "/api/bridge/heartbeat", b"{}")
@@ -192,3 +196,84 @@ def test_bridge_auth_and_mt5_flow(db):
     p = db.scalar(select(Position).where(Position.broker_ticket == "555"))
     assert p.status == "CLOSED" and p.realized_pnl == pytest.approx(-2.25)
     assert db.scalar(select(Order).where(Order.client_id == o.client_id)).status == "FILLED"
+
+
+def test_broker_settings_from_dashboard(db):
+    c = login()
+    b = TestClient(app)
+    c.post("/api/system/mode", json={"mode": "OFF"})
+    # Credentials need a password confirmation and are never returned.
+    assert c.put("/api/brokers/capital", json={"fields": {"identifier": "me@x.com", "api_key": "K-123456789",
+                                                           "api_password": "p$ss"}}).status_code == 403
+    r = c.put("/api/brokers/capital", json={"fields": {"identifier": "me@x.com", "api_key": "K-123456789",
+                                                        "api_password": "p$ss"}, "password": PW})
+    assert r.status_code == 200, r.text
+    assert "K-123456789" not in r.text and r.json()["connectors"]["capital"]["fields"]["api_key_set"]
+    # Live environment is impossible without the live gate.
+    assert c.put("/api/brokers/capital", json={"fields": {"environment": "live"}, "password": PW}).status_code == 400
+    assert c.post("/api/brokers/activate", json={"name": "capital", "password": PW}).status_code == 200
+    # The connector reads its decrypted config over the internal network only.
+    h = _signed("GET", "/api/bridge/config")
+    h["x-connector"] = "capital"
+    cfg = b.get("/api/bridge/config?connector=capital", headers=h).json()
+    assert cfg["active"] and cfg["api_key"] == "K-123456789" and cfg["api_password"] == "p$ss" and cfg["allow_real"] is False
+    h = _signed("GET", "/api/bridge/config")
+    h.update({"x-connector": "capital", "x-real-ip": "1.2.3.4"})
+    assert b.get("/api/bridge/config?connector=capital", headers=h).status_code == 403
+    # Database holds only ciphertext.
+    with engine.connect() as conn:
+        raw = conn.execute(text("select value::text from settings where key='brokers'")).scalar()
+    assert "K-123456789" not in raw and "p$ss" not in raw
+    # An inactive connector is refused.
+    hb = b"{}"
+    h = _signed("POST", "/api/bridge/heartbeat", hb)
+    h["x-connector"] = "ctrader"
+    assert b.post("/api/bridge/heartbeat", content=hb, headers=h).status_code == 409
+
+
+def test_manual_order_paper(db):
+    c = login()
+    c.post("/api/system/mode", json={"mode": "OFF"})
+    c.post("/api/brokers/activate", json={"name": "none", "password": PW})
+    assert c.put("/api/system/data", json={"source": "simulator"}).status_code == 200
+    md.run_simulator(db, ["EURUSD"], ["M15", "H1"])
+    db.commit()
+    assert c.post("/api/system/mode", json={"mode": "PAPER"}).status_code == 200
+    c.post("/api/system/unlock", json={"note": "test reset"})
+    for p in c.get("/api/positions?status=OPEN").json():
+        c.post(f"/api/positions/{p['id']}/close")
+    sug = c.get("/api/live/suggest?symbol=EURUSD&side=BUY").json()
+    assert sug["stop_loss"] < sug["entry"] < sug["take_profit"]
+    ticket = {"symbol": "EURUSD", "side": "BUY", "stop_loss": round(sug["entry"] - 0.0015, 5), "take_profit": round(sug["entry"] + 0.003, 5)}
+    pv = c.post("/api/live/preview", json=ticket).json()
+    assert pv["approved"], [x for x in pv["checks"] if not x["passed"]]
+    # Oversized manual volume is refused by the risk engine.
+    big = c.post("/api/live/order", json={**ticket, "volume": 5})
+    assert big.status_code == 400 and "risk" in big.json()["detail"]
+    r = c.post("/api/live/order", json=ticket)
+    assert r.status_code == 200 and r.json()["status"] == "FILLED", r.text
+    feed = c.get("/api/live/feed").json()
+    assert feed["positions"] and any(a["action"] == "order.manual" for a in feed["activity"])
+
+
+def test_ai_settings_encrypted_and_explain_only(db):
+    c = login()
+    assert c.post("/api/ai/chat", json={"messages": [{"role": "user", "content": "hi"}]}).status_code == 400
+    r = c.put("/api/ai/settings", json={"provider": "anthropic", "model": "claude-sonnet-5-5", "api_key": "sk-ant-secret-1",
+                                        "enabled": True, "share_data": True, "password": PW})
+    assert r.status_code == 200 and r.json()["api_key_set"] and "sk-ant" not in r.text
+    with engine.connect() as conn:
+        assert "sk-ant-secret-1" not in conn.execute(text("select value::text from settings where key='ai'")).scalar()
+    from app.routers import ai as ai_mod
+    captured = {}
+
+    def fake_call(provider, model, key, system, messages):
+        captured.update(provider=provider, key=key, system=system)
+        return "RSI measures momentum."
+    ai_mod._call, orig = fake_call, ai_mod._call
+    try:
+        r = c.post("/api/ai/chat", json={"messages": [{"role": "user", "content": "What is RSI?"}]})
+    finally:
+        ai_mod._call = orig
+    assert r.json()["reply"] == "RSI measures momentum."
+    assert captured["key"] == "sk-ant-secret-1" and "cannot place" in captured["system"] and "APP DATA" in captured["system"]

@@ -60,6 +60,8 @@ def status(user: User = Depends(require("dashboard.view")), db: Session = Depend
         "reconciliation": state.get(db, "reconciliation"),
         "live_gate": state.get(db, "live_gate"),
         "telegram_configured": telegram_configured(),
+        "broker": {"active": state.get(db, "brokers")["active"],
+                   "status": state.get(db, "connector_status").get(state.get(db, "brokers")["active"], {})},
         "strategy": {k: state.get(db, "strategy")[k] for k in ("name", "version", "symbols", "timeframes", "trade_timeframes")},
     }
 
@@ -307,6 +309,12 @@ def put_gate(body: GateIn, request: Request, user: User = Depends(require("live.
         gate.update(approved=True, approved_by=user.username, approved_at=utcnow().isoformat())
     if not all_ok and gate.get("approved"):
         gate.update(approved=False, approved_by="", approved_at="")
+        br = state.get_locked(db, "brokers")
+        if br.get("allow_real") or br.get("capital", {}).get("environment") == "live":
+            br["allow_real"] = False
+            br.setdefault("capital", {})["environment"] = "demo"
+            br["version"] = int(br.get("version", 1)) + 1
+            state.put(db, "brokers", br, by=user.username)
         tr = state.get_locked(db, "trading")
         if tr["mode"] == "MT5_LIVE":
             tr["mode"] = "MT5_DEMO"

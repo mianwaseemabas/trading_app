@@ -50,6 +50,7 @@ function RunDetail({ id }) {
       ) : (
         <div className="alert ok">No robustness warnings on this sample. Past results do not establish future profitability — continue to demo testing.</div>
       )}
+      <div className="row end"><a className="btn sm ghost" href={`#/assistant?q=${encodeURIComponent(`Explain my backtest #${id} (${r.params.symbol} ${r.params.timeframe}): all=${JSON.stringify(m.all)}, out_of_sample=${JSON.stringify(m.out_of_sample)}, warnings=${JSON.stringify(m.warnings)}, rejected=${JSON.stringify(m.risk_rejections)}. Is it good enough for demo trading and what should I try next?`)}`}>✦ Ask AI to explain</a></div>
       <p className="muted small">{r.params.symbol} {r.params.timeframe} · {fmt.dt(m.period_start)} → {fmt.dt(m.period_end)} · {m.candles} candles · {m.signals} signals · strategy v{m.strategy?.version}</p>
       <h4>All trades</h4>
       <MetricsGrid m={m.all} />
