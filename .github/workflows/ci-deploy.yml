@@ -1,0 +1,74 @@
+name: CI / Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trader
+          POSTGRES_PASSWORD: trader
+          POSTGRES_DB: trading_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U trader" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://trader:trader@localhost:5432/trading_test
+      BRIDGE_SECRET: ci-bridge-secret-0123456789abcdef0123456789
+      COOKIE_SECURE: "false"
+      PYTHONPATH: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements-dev.txt
+      - run: python -m pytest -q backend/tests
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  deploy:
+    # Auto-deploys to the VPS after tests pass on main, once these repository
+    # secrets exist: VPS_HOST, VPS_USER, VPS_SSH_KEY (optional VPS_PORT).
+    needs: [backend-tests, frontend-build]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.VPS_SSH_KEY != '' && secrets.VPS_HOST != '' }}
+    steps:
+      - name: Skip (deploy secrets not configured)
+        if: env.HAS_KEY != 'true'
+        run: echo "Set VPS_HOST, VPS_USER and VPS_SSH_KEY repository secrets to enable automatic deployment."
+      - name: Deploy over SSH
+        if: env.HAS_KEY == 'true'
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/id_deploy -p "$PORT" "$USER@$HOST" "sudo /opt/trading_app/deploy/update.sh"

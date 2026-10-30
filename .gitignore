@@ -1,0 +1,12 @@
+.env
+*.env
+!.env.example
+!bridge/bridge.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/dist/
+backups/
+docker-compose.override.yml
+bridge/*.log

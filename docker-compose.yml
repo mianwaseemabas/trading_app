@@ -1,0 +1,101 @@
+# Qivynex Trade — production stack.
+#   db       PostgreSQL 16 (data in the "pgdata" volume, never exposed)
+#   backend  FastAPI API (2 workers)
+#   worker   trading engine (single instance)
+#   web      nginx: dashboard + /api proxy, published on 127.0.0.1:${WEB_PORT}
+#   caddy    optional automatic-HTTPS reverse proxy (profile "caddy"), used only
+#            when the VPS has no existing web server on ports 80/443.
+name: qivynex-trade
+
+x-app-env: &app-env
+  APP_ENV: production
+  PUBLIC_URL: https://${DOMAIN}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  SECRET_KEY: ${SECRET_KEY}
+  COOKIE_SECURE: "true"
+  INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+  INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+  BRIDGE_KEY_ID: ${BRIDGE_KEY_ID:-mt5-bridge-1}
+  BRIDGE_SECRET: ${BRIDGE_SECRET}
+  BRIDGE_ALLOWED_IPS: ${BRIDGE_ALLOWED_IPS:-}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
+  SESSION_MAX_HOURS: ${SESSION_MAX_HOURS:-12}
+  TZ: UTC
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: *app-env
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment: *app-env
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8090}:8080"
+    networks: [internal, edge]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    networks: [edge]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+  edge:
