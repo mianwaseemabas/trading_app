@@ -92,6 +92,11 @@ export default function Backtest() {
   const [selected, setSelected] = useState(null);
   const [f, setF] = useState({ symbol: "EURUSD", timeframe: "H1", start: "", end: "", initial_balance: 500, spread_points: 12, slippage_points: 3, commission_per_lot: 7, swap_per_lot_per_night: -1, oos_fraction: 0.3, folds: 4 });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const { data: riskCfg } = useApi("/system/risk");
+  useEffect(() => {
+    // Default the backtest commission to the live risk setting (0 for Capital.com, which charges no commission).
+    if (riskCfg?.risk) setF((x) => ({ ...x, commission_per_lot: riskCfg.risk.commission_per_lot }));
+  }, [riskCfg]);
   const submit = () => {
     const body = { ...f, start: f.start || null, end: f.end || null };
     ["initial_balance", "spread_points", "slippage_points", "commission_per_lot", "swap_per_lot_per_night", "oos_fraction"].forEach((k) => (body[k] = Number(body[k])));

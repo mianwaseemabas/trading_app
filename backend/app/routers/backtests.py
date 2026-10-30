@@ -54,6 +54,8 @@ def _execute(run_id: int) -> None:
                 raise ValueError(f"Only {len(df)} candles available; need at least 500. Import history first.")
             inst = md.ensure_instrument(db, p["symbol"])
             spec = spec_of(inst)
+            # Historical simulation: the market's *current* open/closed status is irrelevant.
+            spec.trade_allowed = True
             cfg = {**state.get(db, "strategy"), **p.get("strategy_overrides", {})}
             risk = state.get(db, "risk")
             res = run_backtest(df, cfg, risk, spec, p)
