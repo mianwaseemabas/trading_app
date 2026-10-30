@@ -82,9 +82,10 @@ docker compose exec backend python -m app.cli reset-password abbas
 docker compose exec backend python -m app.cli disable-2fa abbas
 ```
 
-**Auto-deploy from GitHub:** add repository secrets `VPS_HOST` (37.60.252.21), `VPS_USER`, `VPS_SSH_KEY`
-(private key of a user allowed to `sudo /opt/trading_app/deploy/update.sh`). Every push to `main` then runs
-tests, builds the dashboard and deploys.
+**Auto-deploy from GitHub:** run `sudo /opt/trading_app/deploy/setup-autodeploy.sh` once on the VPS and add
+the 4 secrets it prints (`VPS_HOST`, `VPS_USER`, `VPS_PORT`, `VPS_SSH_KEY`) under GitHub → Settings → Secrets
+and variables → Actions. From then on every push to `main` runs the tests and, if they pass, updates the VPS
+(database backup first). The deploy key can only run `deploy/update.sh` — nothing else.
 
 ## Getting data and testing
 
