@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
+import ZoomChart from "../components/ZoomChart.jsx";
 import { Modal, fmt, pnlClass, useAction, useApi, useToast, useWidth } from "../components.jsx";
 
-const TFS = [["M15", "15M"], ["H1", "1H"], ["H4", "4H"], ["D1", "1D"]];
+const TFS = [["S5", "5s"], ["S15", "15s"], ["S30", "30s"], ["M1", "1m"], ["M5", "5m"], ["M15", "15m"], ["M30", "30m"], ["H1", "1H"], ["H4", "4H"], ["D1", "1D"]];
+const TF_SEC = { S5: 5, S15: 15, S30: 30, M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 };
 const ASSET_TABS = [["all", "All"], ["fav", "★"], ["forex", "Forex"], ["crypto", "Crypto"], ["other", "Stocks & more"]];
 const COIN = { BTC: "₿", ETH: "Ξ", SOL: "◎", XRP: "✕", BNB: "◆", DOGE: "Ð", ADA: "₳" };
 const toneCls = { ok: "t-ok", bad: "t-bad", warn: "t-warn", info: "t-info", muted: "t-muted" };
@@ -169,53 +171,6 @@ function RiskStrip({ t }) {
   );
 }
 
-function PriceChart({ data, digits, levels }) {
-  const [ref, w] = useWidth();
-  const [hov, setHov] = useState(null);
-  const c = data?.candles || [];
-  if (!c.length) return <div ref={ref} className="muted pad">No price history for this timeframe yet.</div>;
-  const H = 360, pad = { l: 8, r: 70, t: 10, b: 24 };
-  const vals = c.flatMap((x) => [x.high, x.low]).concat(levels.map((l) => l.price).filter(Boolean));
-  let lo = Math.min(...vals), hi = Math.max(...vals);
-  const m = (hi - lo) * 0.05 || 0.001; lo -= m; hi += m;
-  const cw = (w - pad.l - pad.r) / c.length;
-  const X = (i) => pad.l + i * cw + cw / 2;
-  const Y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
-  const ticks = [...Array(5).keys()].map((k) => lo + ((hi - lo) * (k + 0.5)) / 5);
-  const line = (k) => c.map((x, i) => (x[k] == null ? "" : `${i && c[i - 1][k] != null ? "L" : "M"}${X(i).toFixed(1)},${Y(x[k]).toFixed(1)}`)).join("");
-  const hv = hov != null ? c[hov] : null;
-  return (
-    <div ref={ref} className="chart">
-      {hv && <div className="chart-tip mono small">{fmt.dt(hv.time)} · O {hv.open.toFixed(digits)} H {hv.high.toFixed(digits)} L {hv.low.toFixed(digits)} C {hv.close.toFixed(digits)}</div>}
-      <svg width={w} height={H} onMouseLeave={() => setHov(null)} onMouseMove={(e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        setHov(Math.max(0, Math.min(c.length - 1, Math.floor((e.clientX - r.left - pad.l) / cw))));
-      }}>
-        {ticks.map((v) => <g key={v}><line x1={pad.l} x2={w - pad.r} y1={Y(v)} y2={Y(v)} className="grid" /><text x={w - pad.r + 4} y={Y(v) + 4} className="axis">{v.toFixed(digits)}</text></g>)}
-        {c.map((x, i) => {
-          const up = x.close >= x.open;
-          return (
-            <g key={x.time} className={up ? "cu" : "cd"}>
-              <line x1={X(i)} x2={X(i)} y1={Y(x.high)} y2={Y(x.low)} strokeWidth="1.2" />
-              <rect x={X(i) - Math.max(1.2, cw * 0.34)} width={Math.max(2.4, cw * 0.68)} y={Y(Math.max(x.open, x.close))} height={Math.max(1, Math.abs(Y(x.open) - Y(x.close)))} rx="1" />
-            </g>
-          );
-        })}
-        <path d={line("ema20")} fill="none" stroke="#38bdf8" strokeWidth="1.6" />
-        <path d={line("ema50")} fill="none" stroke="#a78bfa" strokeWidth="1.2" opacity="0.7" />
-        {levels.filter((l) => l.price && l.price > lo && l.price < hi).map((l, k) => (
-          <g key={k}><line x1={pad.l} x2={w - pad.r} y1={Y(l.price)} y2={Y(l.price)} stroke={l.color} strokeDasharray="5 4" />
-            <text x={w - pad.r + 4} y={Y(l.price) - 3} className="axis" fill={l.color}>{l.label}</text></g>
-        ))}
-        {hov != null && <line x1={X(hov)} x2={X(hov)} y1={pad.t} y2={H - pad.b} className="cross" />}
-        <rect x={w - pad.r} y={Y(c[c.length - 1].close) - 9} width={pad.r - 2} height="18" rx="3" fill="var(--accent)" />
-        <text x={w - pad.r + 4} y={Y(c[c.length - 1].close) + 4} fill="#fff" fontSize="11" className="mono">{c[c.length - 1].close.toFixed(digits)}</text>
-      </svg>
-      <div className="tiny muted">— EMA 20 &nbsp; <span style={{ color: "#a78bfa" }}>— EMA 50</span> · dashed lines = your open trade (entry / SL / TP)</div>
-    </div>
-  );
-}
-
 function pipOf(symbol, asset) {
   if (asset !== "forex") return null;
   return symbol.endsWith("JPY") ? 0.01 : 0.0001;
@@ -315,11 +270,13 @@ function OrderPanel({ symbol, t, quote, onPlaced }) {
 export default function Terminal() {
   const toast = useToast();
   const [symbol, setSymbol] = useState(getSym() || "EURUSD");
-  const [tf, setTf] = useState("H1");
   const [brief, setBrief] = useState(null);
   const { data: wl, reload: reloadWl } = useApi("/intel/watchlist", { interval: 5000 });
   const { data: t, reload: reloadT } = useApi(`/intel/terminal?symbol=${symbol}`, { interval: 10000, deps: [symbol] });
-  const { data: cd } = useApi(`/intel/candles?symbol=${symbol}&tf=${tf}&limit=90`, { interval: 30000, deps: [symbol, tf] });
+  const [tf, setTfRaw] = useState(() => { try { return localStorage.getItem("q.tf") || "H1"; } catch { return "H1"; } });
+  const setTf = (v) => { setTfRaw(v); try { localStorage.setItem("q.tf", v); } catch { /* ignore */ } };
+  const refreshMs = TF_SEC[tf] < 60 ? 2000 : TF_SEC[tf] <= 300 ? 5000 : 30000;
+  const { data: cd } = useApi(`/intel/candles?symbol=${symbol}&tf=${tf}&limit=400`, { interval: refreshMs, deps: [symbol, tf] });
   const { data: live, reload: reloadLive } = useApi("/live/feed", { interval: 5000 });
   const { data: cf, reload: reloadCf } = useApi("/crypto/feed", { interval: 5000 });
   const { can } = useAuth();
@@ -368,21 +325,23 @@ export default function Terminal() {
                     <div className="big-px mono">{w?.bid != null ? Number(w.bid).toFixed(digits) : last ? last.close.toFixed(digits) : "—"}</div>
                     {last && <div className="tiny muted mono">H {Math.max(...c.map((x) => x.high)).toFixed(digits)} | L {Math.min(...c.map((x) => x.low)).toFixed(digits)} | O {first.open.toFixed(digits)}</div>}
                   </div>
-                  <div className="tf-row">{TFS.map(([k, l]) => <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>)}</div>
+                  <div className="tf-row scroll-x">{TFS.map(([k, l]) => <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>)}</div>
                 </div>
-                <PriceChart data={cd} digits={digits} levels={levels} />
+                <ZoomChart candles={cd?.candles || []} digits={digits} levels={levels} tfSec={TF_SEC[tf]} />
+                <div className="tiny muted">— EMA 20 &nbsp; <span style={{ color: "#a78bfa" }}>— EMA 50</span> · dashed = your open trade (entry / SL / TP)
+                  {cd?.source && <> · data: {cd.source}{TF_SEC[tf] < 60 && cd.source === "live price updates" ? " (built from the prices the app receives, every few seconds)" : ""}</>}</div>
               </div>
               <div className="tcard">
                 <div className="tc-title">Open positions · {t?.account?.mode_label || ""}</div>
                 {positions.length === 0 ? <p className="muted small">No open positions.</p> : (
-                  <table className="tbl"><thead><tr><th>Market</th><th>Side</th><th className="num">Size</th><th className="num">Entry</th><th className="num">SL</th><th className="num">TP</th><th className="num">P/L</th><th /></tr></thead>
+                  <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Market</th><th>Side</th><th className="num">Size</th><th className="num">Entry</th><th className="num">SL</th><th className="num">TP</th><th className="num">P/L</th><th /></tr></thead>
                     <tbody>{positions.map((p) => { const dg = (wl || []).find((x) => x.symbol === p.symbol)?.digits ?? 5; const px = (v) => (v == null ? "—" : Number(v).toFixed(dg)); return (
                       <tr key={p.id} className={p.symbol === symbol ? "hl-row" : ""} onClick={() => pick(p.symbol)}>
                         <td>{p.symbol}</td><td className={p.side === "BUY" ? "pos" : "neg"}>{p.side}</td><td className="num">{p.volume}</td>
                         <td className="num mono">{px(p.open_price)}</td><td className="num mono">{px(p.stop_loss)}</td><td className="num mono">{px(p.take_profit)}</td>
                         <td className={`num ${pnlClass(p.unrealized_pnl)}`}>{fmt.money(p.unrealized_pnl)}</td>
                         <td>{can("killswitch.use") && <button className="btn sm" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Close ${p.symbol}?`)) run(() => api.post(`/positions/${p.id}/close`), "Close requested").then(refresh); }}>Close</button>}</td>
-                      </tr>); })}</tbody></table>
+                      </tr>); })}</tbody></table></div>
                 )}
                 <a className="small" href="#/live">Full trade management (edit stop, journal, screenshots) →</a>
               </div>

@@ -28,7 +28,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
 
-TF = {"M15": ("15m", "15m", "15"), "H1": ("1h", "1H", "60"), "H4": ("4h", "4H", "240"), "D1": ("1d", "1Dutc", "D")}
+TF = {"S1": ("1s", "1s", None), "M1": ("1m", "1m", "1"), "M5": ("5m", "5m", "5"), "M30": ("30m", "30m", "30"),
+      "M15": ("15m", "15m", "15"), "H1": ("1h", "1H", "60"), "H4": ("4h", "4H", "240"), "D1": ("1d", "1Dutc", "D")}
 
 
 class ExchangeError(Exception):

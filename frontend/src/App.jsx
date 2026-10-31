@@ -22,32 +22,34 @@ import Smc from "./pages/Smc.jsx";
 import Terminal from "./pages/Terminal.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import StrategyLab from "./pages/StrategyLab.jsx";
+import Academy from "./pages/Academy.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
-  { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true },
-  { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard },
-  { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview },
-  { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts },
-  { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups },
-  { k: "lab", label: "Strategy lab & auto-trade", icon: "⚗", perm: "backtest.run", el: StrategyLab },
-  { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live },
-  { k: "news", label: "News", icon: "◉", perm: "market.view", el: News },
-  { k: "smc", label: "SMC scanner", icon: "⌖", perm: "market.view", el: Smc },
-  { k: "market", label: "Market", icon: "◫", perm: "market.view", el: Market },
-  { k: "signals", label: "Signals", icon: "◇", perm: "signals.view", el: Signals },
-  { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades },
-  { k: "backtest", label: "Backtest", icon: "↺", perm: "backtest.run", el: Backtest },
-  { k: "risk", label: "Risk & Strategy", icon: "⛨", perm: "dashboard.view", el: RiskStrategy },
-  { k: "brokers", label: "Brokers", icon: "⇄", perm: "dashboard.view", el: Brokers },
-  { k: "assistant", label: "AI Assistant", icon: "✦", perm: "ai.use", el: Assistant },
-  { k: "guide", label: "Guide", icon: "?", perm: null, el: Guide },
-  { k: "users", label: "Users", icon: "☰", perm: "users.manage", el: Users },
-  { k: "audit", label: "Audit & Events", icon: "⌘", perm: "audit.view", el: Audit },
-  { k: "settings", label: "System", icon: "⚙", perm: "system.settings", el: Settings },
-  { k: "account", label: "My account", icon: "◉", perm: null, el: Account },
+  { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true, sec: "Trade", tab: true },
+  { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard, sec: "Trade" },
+  { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live, sec: "Trade", tab: true },
+  { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups, sec: "Trade" },
+  { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts, sec: "Trade", tab: true },
+  { k: "academy", label: "Academy (learn)", icon: "🎓", perm: "dashboard.view", el: Academy, sec: "Learn", tab: true },
+  { k: "assistant", label: "AI Assistant", icon: "✦", perm: "ai.use", el: Assistant, sec: "Learn" },
+  { k: "guide", label: "Guide", icon: "?", perm: null, el: Guide, sec: "Learn" },
+  { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview, sec: "Research" },
+  { k: "news", label: "News", icon: "◉", perm: "market.view", el: News, sec: "Research" },
+  { k: "smc", label: "SMC scanner", icon: "⌖", perm: "market.view", el: Smc, sec: "Research" },
+  { k: "market", label: "Market", icon: "◫", perm: "market.view", el: Market, sec: "Research" },
+  { k: "signals", label: "Signals", icon: "◇", perm: "signals.view", el: Signals, sec: "Research" },
+  { k: "lab", label: "Strategy lab & auto-trade", icon: "⚗", perm: "backtest.run", el: StrategyLab, sec: "Strategy" },
+  { k: "backtest", label: "Backtest", icon: "↺", perm: "backtest.run", el: Backtest, sec: "Strategy" },
+  { k: "risk", label: "Risk & Strategy", icon: "⛨", perm: "dashboard.view", el: RiskStrategy, sec: "Strategy" },
+  { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades, sec: "Strategy" },
+  { k: "brokers", label: "Brokers", icon: "⇄", perm: "dashboard.view", el: Brokers, sec: "Setup" },
+  { k: "settings", label: "System", icon: "⚙", perm: "system.settings", el: Settings, sec: "Setup" },
+  { k: "users", label: "Users", icon: "☰", perm: "users.manage", el: Users, sec: "Setup" },
+  { k: "audit", label: "Audit & Events", icon: "⌘", perm: "audit.view", el: Audit, sec: "Setup" },
+  { k: "account", label: "My account", icon: "◉", perm: null, el: Account, sec: "Setup" },
 ];
 
 function useHashRoute() {
@@ -160,14 +162,15 @@ function usePrivacy() {
   return [on, () => setOn(!on)];
 }
 
-function TopBar({ user, logout }) {
+function TopBar({ user, logout, onMenu }) {
   const can = (p) => user.permissions.includes(p);
   const [privacy, togglePrivacy] = usePrivacy();
   const { data } = useApi(can("dashboard.view") ? "/system/status" : null, { interval: 10000 });
   const tr = data?.trading;
   return (
     <header className="topbar">
-      <div className="row gap">
+      <div className="row gap tb-left">
+        <button className="hamb" onClick={onMenu} aria-label="Menu">☰</button>
         {tr && <Badge tone={modeTone(tr.mode)}>Mode: {modeLabel(tr.mode)}</Badge>}
         {tr?.kill_switch && <Badge tone="bad">KILL SWITCH ON</Badge>}
         {tr?.locked && <Badge tone="bad" title={tr.lock_reason}>LOCKED</Badge>}
@@ -176,8 +179,8 @@ function TopBar({ user, logout }) {
       </div>
       <div className="row gap">
         {can("dashboard.view") && <Bell />}
-        <button className="btn ghost sm" title="Hide personal and account details (for screenshots)" onClick={togglePrivacy}>{privacy ? "🙈 private" : "👁 details"}</button>
-        <span className="muted small pii">{user.full_name || user.username}{user.is_admin ? " · admin" : ""}</span>
+        <button className="btn ghost sm" title="Hide personal and account details (for screenshots)" onClick={togglePrivacy}>{privacy ? "🙈" : "👁"}<span className="hide-sm"> {privacy ? "private" : "details"}</span></button>
+        <span className="muted small pii hide-sm">{user.full_name || user.username}{user.is_admin ? " · admin" : ""}</span>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
       </div>
     </header>
@@ -188,6 +191,7 @@ export default function App() {
   const [user, setUser] = useState(undefined);
   const route = useHashRoute();
   const toast = useToast();
+  const [menu, setMenu] = useState(false);
 
   const applyUser = useCallback((u) => {
     if (u?.csrf_token) setCsrf(u.csrf_token);
@@ -229,22 +233,37 @@ export default function App() {
   return (
     <AuthCtx.Provider value={{ user, setUser: applyUser, can: (p) => user.permissions.includes(p) }}>
       <div className={`shell ${current.flush ? "compact" : ""}`}>
-        <nav className="side">
-          <div className="brand"><span className="logo">Q</span><span>Qivynex<small className="brand-sub">Intelligence Platform</small></span></div>
-          {allowed.map((r) => (
-            <a key={r.k} href={`#/${r.k}`} title={r.label} className={r.k === current.k ? "nav on" : "nav"}>
-              <span className="nav-i">{r.icon}</span><span className="nav-t">{r.label}</span>
-            </a>
-          ))}
+        {menu && <div className="nav-scrim" onClick={() => setMenu(false)} />}
+        <nav className={`side ${menu ? "open" : ""}`}>
+          <div className="brand"><span className="logo">Q</span><span>Qivynex<small className="brand-sub">Intelligence Platform</small></span>
+            <button className="nav-close" onClick={() => setMenu(false)} aria-label="Close menu">✕</button></div>
+          <div className="nav-scroll">
+            {[...new Set(allowed.map((r) => r.sec))].map((sec) => (
+              <div key={sec} className="nav-sec">
+                <div className="nav-h">{sec}</div>
+                {allowed.filter((r) => r.sec === sec).map((r) => (
+                  <a key={r.k} href={`#/${r.k}`} title={r.label} className={r.k === current.k ? "nav on" : "nav"} onClick={() => setMenu(false)}>
+                    <span className="nav-i">{r.icon}</span><span className="nav-t">{r.label}</span>
+                  </a>
+                ))}
+              </div>
+            ))}
+          </div>
           <div className="side-foot muted small">Automated trading can lose money. Demo first.</div>
         </nav>
         <main className="main">
-          <TopBar user={user} logout={logout} />
+          <TopBar user={user} logout={logout} onMenu={() => setMenu(true)} />
           <div className={`page ${current.flush ? "flush" : ""}`}>
             {!current.flush && <h1>{current.label}</h1>}
             <Page />
           </div>
         </main>
+        <nav className="tabbar">
+          {allowed.filter((r) => r.tab).map((r) => (
+            <a key={r.k} href={`#/${r.k}`} className={r.k === current.k ? "on" : ""}><span>{r.icon}</span><small>{r.label.split(" ")[0]}</small></a>
+          ))}
+          <button onClick={() => setMenu(true)}><span>☰</span><small>More</small></button>
+        </nav>
       </div>
     </AuthCtx.Provider>
   );

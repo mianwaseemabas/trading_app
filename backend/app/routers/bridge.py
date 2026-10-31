@@ -23,6 +23,7 @@ from ..audit import audit, event
 from ..config import settings
 from ..db import get_db
 from ..deps import client_ip
+from ..services.chart import record_tick
 from ..models import AccountSnapshot, BridgeNonce, Instrument, Order, Position, Quote, utcnow
 from ..services import livegate
 from ..services import market_data as md
@@ -219,6 +220,7 @@ async def quotes(request: Request, auth=Depends(bridge_auth), db: Session = Depe
             row = Quote(symbol=q["symbol"], bid=bid, ask=ask, time=now)
             db.add(row)
         row.bid, row.ask, row.time, row.collected_at, row.source = bid, ask, _ts(q.get("time", now.timestamp())), now, "mt5"
+        record_tick(db, q["symbol"], bid, ask, now)
     db.commit()
     return {"status": "ok"}
 

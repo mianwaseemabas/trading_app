@@ -257,3 +257,5 @@ def run_simulator(db: Session, symbols: list[str], timeframes: list[str], backfi
             db.add(q)
         q.bid, q.ask = round(m - half, inst.digits), round(m + half, inst.digits)
         q.time, q.collected_at, q.source = now, now, "simulator"
+        from .chart import record_tick
+        record_tick(db, sym, q.bid, q.ask, now)

@@ -532,3 +532,31 @@ class NewsHeadline(Base):
     tags: Mapped[list] = mapped_column(JSON, default=list)
     assets: Mapped[list] = mapped_column(JSON, default=list)
     fetched_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+
+
+class Tick(Base):
+    """Recent price updates (kept a few hours) — used to draw seconds/minute charts."""
+
+    __tablename__ = "ticks"
+    __table_args__ = (Index("ix_ticks_sym_time", "symbol", "time"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    time: Mapped[datetime] = mapped_column(TS)
+    bid: Mapped[float] = mapped_column(Float)
+    ask: Mapped[float] = mapped_column(Float)
+
+
+class AcademyProgress(Base):
+    """Per-user progress through the in-app Academy lessons."""
+
+    __tablename__ = "academy_progress"
+    __table_args__ = (UniqueConstraint("user_id", "lesson_id", name="uq_academy_user_lesson"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    lesson_id: Mapped[str] = mapped_column(String(64))
+    steps_done: Mapped[list] = mapped_column(JSON, default=list)
+    quiz_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow)

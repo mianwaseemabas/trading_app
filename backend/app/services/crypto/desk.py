@@ -24,6 +24,7 @@ from ...audit import audit, event
 from ...models import CryptoLink, Instrument, Order, Position, Quote, Signal, SignalApproval, utcnow
 from ...secretbox import decrypt
 from .. import market_data as md
+from ..chart import record_tick
 from ..notifier import notify
 from ..risk_engine import AccountState, OpenPos, RiskContext, evaluate
 from . import exchanges as ex
@@ -91,6 +92,7 @@ def refresh_market(db: Session, http=None) -> None:
             q = db.get(Quote, sym) or Quote(symbol=sym)
             q.bid, q.ask, q.time, q.collected_at, q.source = bid, ask, utcnow(), utcnow(), c["exchange"][:16]
             db.add(q)
+            record_tick(db, sym, bid, ask)
             ensure_instrument(db, x, sym, ask)
             for tf in c.get("timeframes", ["H1"]):
                 key = (c["exchange"], c["mode"] == "TEST", sym, tf)

@@ -62,17 +62,18 @@ def terminal(symbol: str = "EURUSD", user: User = Depends(require("market.view")
 
 
 @router.get("/candles")
-def candles(symbol: str, tf: str = "H1", limit: int = Query(120, ge=20, le=600), user: User = Depends(require("market.view")),
+def candles(symbol: str, tf: str = "H1", limit: int = Query(120, ge=20, le=1000), user: User = Depends(require("market.view")),
             db: Session = Depends(get_db)):
-    if tf not in md.TF_SECONDS:
+    from ..services import chart
+    if tf not in chart.CHART_TFS:
         raise HTTPException(400, "Unknown timeframe")
     cfg = state.get(db, "strategy")
-    df = report.candles_tf(db, symbol.upper(), tf, limit=limit + 250)
+    df, source = chart.candles(db, symbol.upper(), tf, limit + 60)
     if df.empty:
-        return {"candles": []}
+        return {"candles": [], "source": source}
     ind = add_indicators(df, {**cfg, "ema_fast": 20, "ema_slow": cfg["ema_fast"]}).tail(limit)
     nan = lambda v: None if v != v else float(v)  # noqa: E731
-    return {"symbol": symbol.upper(), "tf": tf, "candles": [
+    return {"symbol": symbol.upper(), "tf": tf, "source": source, "seconds": chart.CHART_TFS[tf], "candles": [
         {"time": int(t.timestamp()), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "ema20": nan(r.ema_fast),
          "ema50": nan(r.ema_slow)} for t, r in ind.iterrows()]}
 
