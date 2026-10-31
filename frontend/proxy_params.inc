@@ -1,4 +1,5 @@
-proxy_pass http://backend;
+set $backend_upstream http://backend:8000;
+proxy_pass $backend_upstream;
 proxy_http_version 1.1;
 proxy_set_header Connection "";
 proxy_set_header Host $host;

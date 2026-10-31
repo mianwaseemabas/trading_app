@@ -12,6 +12,8 @@ export GIT_COMMIT="$(git rev-parse --short HEAD)"
 ./deploy/backup.sh || echo "warning: pre-update backup failed"
 # Optional services (caddy, ctrader) come from COMPOSE_PROFILES in .env.
 docker compose up -d --build --remove-orphans
+# Make sure the web proxy talks to the (possibly recreated) backend.
+docker compose restart web >/dev/null 2>&1 || true
 docker image prune -f >/dev/null
 for i in $(seq 1 40); do
   curl -fsS "http://127.0.0.1:${WEB_PORT:-8090}/api/health" >/dev/null 2>&1 && { echo "Healthy."; exit 0; }
