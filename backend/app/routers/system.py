@@ -323,6 +323,7 @@ GATE_ITEMS = {
     "demo_results_satisfactory": "Demo results and execution reconciliation are satisfactory (2-4+ weeks)",
     "risk_failure_tests_passed": "Risk engine and kill switch passed failure testing",
     "credentials_secured": "Credentials and network access are secured",
+    "academy_exam_passed": "I passed the Academy readiness exam",
 }
 
 
@@ -356,7 +357,7 @@ def put_gate(body: GateIn, request: Request, user: User = Depends(require("live.
             gate[k] = bool(v)
     if body.notes is not None:
         gate["notes"] = {k: str(v)[:1000] for k, v in body.notes.items() if k in GATE_ITEMS and str(v).strip()}
-    all_ok = all(gate[k] for k in GATE_ITEMS)
+    all_ok = all(gate.get(k) for k in GATE_ITEMS)
     if body.approve:
         if not all_ok:
             raise HTTPException(400, "All gate items must be checked before approval")

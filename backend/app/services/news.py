@@ -99,7 +99,8 @@ def news_check(db: Session, symbol: str, controls: dict) -> tuple[bool, str]:
     fresh = st.get("ok") and st.get("last_fetch") and utcnow() - datetime.fromisoformat(st["last_fetch"]) < timedelta(hours=26)
     if not fresh:
         return True, "calendar unavailable — filter inactive"
-    ccys = [symbol[:3], symbol[3:6]] if len(symbol) >= 6 else [symbol]
+    from .instruments_meta import news_currencies
+    ccys = news_currencies(symbol)
     evs = blocking_events(db, ccys, controls)
     if evs:
         e = evs[0]

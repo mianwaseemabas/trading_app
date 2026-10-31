@@ -93,7 +93,8 @@ def tf_context(db: Session, symbol: str, tf: str, cfg: dict) -> dict | None:
 
 
 def upcoming_news(db: Session, symbol: str, hours: int = 24, impacts=("High", "Medium")) -> list[dict]:
-    ccys = [symbol[:3], symbol[3:6]]
+    from .instruments_meta import news_currencies
+    ccys = news_currencies(symbol)
     now = utcnow()
     rows = db.scalars(select(NewsEvent).where(NewsEvent.currency.in_(ccys), NewsEvent.impact.in_(list(impacts)),
                                               NewsEvent.time >= now - timedelta(minutes=30),

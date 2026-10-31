@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
-import { Badge, Card, useAction, useApi, useToast } from "../components.jsx";
+import { Badge, Card, fmt, useAction, useApi, useToast } from "../components.jsx";
+import { LESSON_TOUR, startTour } from "../tours.js";
 
 const lessonFromHash = () => {
   const m = window.location.hash.match(/[?&]l=([a-z0-9-]+)/);
   return m ? m[1] : null;
 };
+const viewFromHash = () => (window.location.hash.match(/[?&]v=(exam|cert)/) || [])[1] || null;
 const go = (lid) => { window.location.hash = lid ? `#/academy?l=${lid}` : "#/academy"; };
 
 function Progress({ done, total }) {
@@ -106,6 +108,7 @@ function Lesson({ lid, onBack }) {
         </div>
         <Card title={<>{l.title} {l.done && <Badge tone="good">done</Badge>}</>} actions={<span className="small muted">⏱ {l.minutes} min</span>}>
           <div className="lesson-goal">🎯 <b>Goal:</b> {l.goal}</div>
+          {LESSON_TOUR[lid] && <button className="btn sm" style={{ marginBottom: 10 }} onClick={() => startTour(LESSON_TOUR[lid])}>▶ Show me in the app</button>}
           <div className="lesson-idea"><div className="tiny muted">THE IDEA</div>{l.explain}</div>
           {l.check_label && (
             <div className={`alert ${l.check_ok ? "ok" : "warn"} small`}>
@@ -146,15 +149,83 @@ function Lesson({ lid, onBack }) {
   );
 }
 
+function Exam({ onBack }) {
+  const [ex, setEx] = useState(null);
+  const [ans, setAns] = useState({});
+  const [res, setRes] = useState(null);
+  const [run, busy] = useAction();
+  const start = () => run(() => api.post("/academy/exam/start")).then((e) => { setEx(e); setAns({}); setRes(null); window.scrollTo(0, 0); }).catch(() => {});
+  useEffect(() => { start(); }, []); // eslint-disable-line
+  if (!ex) return <p className="muted">Preparing your exam…</p>;
+  const all = ex.questions.every((q) => ans[q.id] !== undefined);
+  const byId = Object.fromEntries((res?.results || []).map((r) => [r.id, r]));
+  return (
+    <div className="stack">
+      <div className="row gap wrap"><button className="btn ghost sm" onClick={onBack}>← Academy</button></div>
+      <Card title={`🎓 Readiness exam — ${ex.questions.length} questions, pass with ${ex.pass_pct}%`}>
+        <p className="small muted">Questions are picked at random from all lessons. Take your time; you can retake it as often as you like (new questions each time).
+          Passing it is one of the live-gate requirements before real money.</p>
+        {res && <div className={`alert ${res.passed ? "ok" : "warn"}`}><b>{res.passed ? `🎉 Passed with ${res.score}%!` : `${res.score}% — not yet (${res.pass_pct}% needed).`}</b>
+          {res.passed ? " Finish all lessons to unlock your certificate." : " Read the explanations below, review those lessons, then try again."}</div>}
+        {ex.questions.map((q, i) => {
+          const r = byId[q.id];
+          return (
+            <div key={q.id} className="exam-q">
+              <b>{i + 1}. {q.q}</b> <span className="tiny muted">· {q.lesson}</span>
+              <div className="quiz-opts" style={{ marginTop: 6 }}>
+                {q.options.map((o, j) => {
+                  const cls = r ? (j === r.answer ? "right" : ans[q.id] === j ? "wrong" : "") : ans[q.id] === j ? "picked" : "";
+                  return <button key={j} className={`quiz-opt ${cls}`} onClick={() => !res && setAns({ ...ans, [q.id]: j })}>{o}</button>;
+                })}
+              </div>
+              {r && !r.correct && <div className="small muted" style={{ marginTop: 4 }}>{r.why}</div>}
+            </div>
+          );
+        })}
+        {!res ? <button className="btn primary" disabled={!all || busy} onClick={() => run(() => api.post(`/academy/exam/${ex.exam_id}/submit`, { answers: ans })).then((r) => { setRes(r); window.scrollTo(0, 0); }).catch(() => {})}>
+          Submit exam ({Object.keys(ans).length}/{ex.questions.length})</button>
+          : <button className="btn" onClick={start}>Take a new exam</button>}
+      </Card>
+    </div>
+  );
+}
+
+function Certificate({ onBack }) {
+  const { data, error } = useApi("/academy/certificate");
+  if (error) return <div className="stack"><button className="btn ghost sm" onClick={onBack}>← Academy</button><div className="alert warn">{error}</div></div>;
+  if (!data) return <p className="muted">Loading…</p>;
+  return (
+    <div className="stack">
+      <div className="row gap wrap"><button className="btn ghost sm" onClick={onBack}>← Academy</button><button className="btn primary sm" onClick={() => window.print()}>🖨 Print / save as PDF</button></div>
+      <div className="cert-wrap">
+        <div className="cert">
+          <small>QIVYNEX ACADEMY</small>
+          <h1>Certificate of Completion</h1>
+          <small>This certifies that</small>
+          <div className="who">{data.name}</div>
+          <p style={{ maxWidth: 620, margin: 0 }}>completed all {data.lessons} lessons of the Qivynex Trade Academy — safe trading, risk management, strategy testing and
+            automation — and passed the readiness exam with <b>{data.score}%</b>.</p>
+          <div className="seal">Q</div>
+          <small>Completed {fmt.dt(data.completed)} · Certificate {data.cert_id} · Longest learning streak {data.streak?.best || 1} day(s)</small>
+          <small>Education only — it shows you learned how to use the app safely. It is not a financial licence or advice.</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Academy() {
+  const [view, setView] = useState(viewFromHash());
   const [lid, setLid] = useState(lessonFromHash());
   const { data, reload } = useApi("/academy");
   const [open, setOpen] = useState(null);
   useEffect(() => {
-    const h = () => { setLid(lessonFromHash()); reload(); };
+    const h = () => { setLid(lessonFromHash()); setView(viewFromHash()); reload(); };
     window.addEventListener("hashchange", h);
     return () => window.removeEventListener("hashchange", h);
   }, [reload]);
+  if (view === "exam") return <Exam onBack={() => go(null)} />;
+  if (view === "cert") return <Certificate onBack={() => go(null)} />;
   if (lid) return <Lesson lid={lid} onBack={() => go(null)} />;
   if (!data) return <p className="muted">Loading…</p>;
   const pct = data.total ? Math.round((data.done / data.total) * 100) : 0;
@@ -162,15 +233,21 @@ export default function Academy() {
     <div className="stack">
       <div className="academy-hero">
         <div>
-          <div className="tiny muted">QIVYNEX ACADEMY</div>
+          <div className="row between wrap gap"><span className="tiny muted">QIVYNEX ACADEMY</span>
+            <span className="streak" title={`Best streak ${data.streak.best} days · learned on ${data.streak.days} days`}>🔥 {data.streak.current} day{data.streak.current === 1 ? "" : "s"}{data.streak.today ? "" : " — learn today to keep it"}</span></div>
           <h2>Learn the app step by step — from zero to safe trading</h2>
           <p className="small muted">{data.total} short lessons. Each one: the idea in plain words, steps to do in the app, a quick check, and a tutor (Claude) you can ask anything.</p>
           <div className="row gap wrap" style={{ alignItems: "center" }}>
             <div style={{ flex: 1, minWidth: 160 }}><Progress done={data.done} total={data.total} /></div>
             <b>{pct}%</b><span className="small muted">{data.done}/{data.total} lessons</span>
           </div>
-          {data.next && <button className="btn primary" style={{ marginTop: 12 }} onClick={() => go(data.next.id)}>{data.done ? "Continue" : "Start"}: {data.next.title} →</button>}
-          {!data.next && <p className="pos">🎓 You finished every lesson. Keep using the tutor and your weekly review.</p>}
+          <div className="row gap wrap" style={{ marginTop: 12 }}>
+            {data.next && <button className="btn primary" onClick={() => go(data.next.id)}>{data.done ? "Continue" : "Start"}: {data.next.title} →</button>}
+            <button className="btn" onClick={() => startTour("start")}>▶ Take the app tour</button>
+            <button className="btn" onClick={() => { window.location.hash = "#/academy?v=exam"; }}>🎓 {data.exam.passed ? `Exam passed (${data.exam.score}%) — retake` : "Readiness exam"}</button>
+            {data.certificate && <button className="btn" onClick={() => { window.location.hash = "#/academy?v=cert"; }}>📜 My certificate</button>}
+          </div>
+          {!data.next && <p className="pos">🎓 You finished every lesson.{data.exam.passed ? "" : " Now pass the readiness exam to get your certificate."}</p>}
         </div>
         <div className="setup-checks">
           <div className="tiny muted">YOUR SETUP (checked automatically)</div>

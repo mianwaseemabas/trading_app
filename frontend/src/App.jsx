@@ -24,6 +24,7 @@ import Alerts from "./pages/Alerts.jsx";
 import StrategyLab from "./pages/StrategyLab.jsx";
 import Academy from "./pages/Academy.jsx";
 import Charts from "./pages/Charts.jsx";
+import Tour from "./components/Tour.jsx";
 import Tools from "./pages/Tools.jsx";
 
 const AuthCtx = createContext(null);
@@ -262,6 +263,7 @@ export default function App() {
             <Page />
           </div>
         </main>
+        <Tour />
         <nav className="tabbar">
           {allowed.filter((r) => r.tab).map((r) => (
             <a key={r.k} href={`#/${r.k}`} className={r.k === current.k ? "on" : ""}><span>{r.icon}</span><small>{r.label.split(" ")[0]}</small></a>

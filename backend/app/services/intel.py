@@ -23,8 +23,8 @@ from . import report, smc
 from .indicators import add_indicators
 
 FX = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "SEK", "NOK", "SGD", "HKD", "MXN", "ZAR", "TRY", "CNH", "PLN"}
-INDICES = {"US500", "US100", "US30", "US2000", "DE40", "UK100", "FR40", "EU50", "J225", "HK50", "AU200", "CN50", "SPX500", "NAS100"}
-COMMODITIES = {"GOLD", "SILVER", "OIL_CRUDE", "OIL_BRENT", "NATURALGAS", "COPPER", "XAUUSD", "XAGUSD", "PLATINUM"}
+INDICES = {"US500", "US100", "US30", "US2000", "DE40", "GER40", "UK100", "FR40", "EU50", "J225", "HK50", "AU200", "CN50", "SPX500", "NAS100"}
+COMMODITIES = {"GOLD", "SILVER", "OIL_CRUDE", "OIL_BRENT", "NATURALGAS", "COPPER", "XAUUSD", "XAGUSD", "PLATINUM", "USOIL", "UKOIL", "XTIUSD", "XBRUSD"}
 CRYPTO_CFD = {"BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "LTCUSD", "ADAUSD", "DOGEUSD", "BNBUSD"}
 _cache: dict = {}
 
@@ -75,6 +75,17 @@ def watchlist(db: Session) -> list[dict]:
         out.append({"symbol": sym, "asset": asset_class(sym, crypto_syms), "venue": cc["exchange"] if sym in crypto_syms else "broker",
                     "bid": bid, "ask": q.ask if q else None, "age_s": (utcnow() - q.collected_at).total_seconds() if q else None,
                     "change_24h": chg, "digits": digits_of(db, sym), "favorite": sym in fav, "spark": spark[-24:]})
+    from .tadawul import symbols as tad_syms
+    tst = state.get(db, "tadawul").get("status", {})
+    for sym in tad_syms(db):
+        q = db.get(Quote, sym)
+        d1 = md.load_candles(db, sym, "D1", limit=2)
+        prev = float(d1["close"].iloc[-1]) if len(d1) else None
+        chg = round((q.bid / prev - 1) * 100, 3) if q and prev else None
+        out.append({"symbol": sym, "asset": "saudi stock", "venue": "watch", "name": (tst.get(sym) or {}).get("name", sym),
+                    "bid": q.bid if q else None, "ask": q.ask if q else None, "age_s": (utcnow() - q.collected_at).total_seconds() if q else None,
+                    "change_24h": chg, "digits": 2, "favorite": sym in fav, "spark": [float(x) for x in md.load_candles(db, sym, "H1", limit=24)["close"]],
+                    "watch_only": True})
     return out
 
 

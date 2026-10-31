@@ -1,3 +1,4 @@
+import { MoreMarketsCard, SaudiStocksCard } from "../components/Markets.jsx";
 import React from "react";
 import { Badge, Card, Table, countdown, digitsFor, fmt, pnlClass, useApi } from "../components.jsx";
 
@@ -13,6 +14,8 @@ export default function Overview() {
   return (
     <div className="stack">
       {waiting?.setups?.length > 0 && <div className="alert warn"><b>{waiting.setups.length} setup(s) waiting for your approval.</b> <a href="#/setups">Review now →</a></div>}
+      <MoreMarketsCard />
+      <SaudiStocksCard />
       <Card title="Trading sessions (UTC, approximate)" actions={<Badge tone={s.weekend ? "muted" : s.liquidity.startsWith("high") ? "ok" : s.liquidity.startsWith("low") ? "warn" : "info"}>Liquidity: {s.liquidity}</Badge>}>
         <div className="chips">
           {s.sessions.map((x) => <span key={x.name} className={`chip ${x.open ? "on" : ""}`}>{x.open ? "● " : "○ "}{x.name} {x.utc}</span>)}

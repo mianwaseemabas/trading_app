@@ -544,6 +544,93 @@ COURSES = [
             },
         ],
     },
+    {
+        "id": "power", "title": "10. Power tools", "icon": "🧰",
+        "summary": "Phone app, Telegram bot, AI brief & coach, chart lines and alerts, multi-chart, calculator, strategy race, gold and Saudi stocks.",
+        "lessons": [
+            {
+                "id": "pow-phone", "title": "Install the phone app and get notifications", "minutes": 4,
+                "goal": "Have Qivynex on your phone's home screen with notifications on.",
+                "explain": "The app can be installed like a normal phone app (no app store needed). Then it can send notifications directly to your phone — "
+                           "useful as a second channel next to Telegram.",
+                "steps": [
+                    {"text": "iPhone: open the site in Safari → Share → Add to Home Screen. Android: Chrome menu ⋮ → Install app."},
+                    {"text": "Open Qivynex from the new icon and sign in."},
+                    {"text": "Alerts → Phone app & notifications → Turn on phone notifications → Send test.", L: "#/alerts"},
+                    {"text": "Tick the 'Phone app' column for the alerts you want and press Save."},
+                ],
+                "quiz": [{"q": "On iPhone, what must you do before notifications can work?", "options": ["Nothing", "Add the app to the Home Screen and open it from the icon", "Install Telegram"],
+                          "answer": 1, "why": "iPhones only allow web-app notifications for apps added to the Home Screen."}],
+            },
+            {
+                "id": "pow-bot", "title": "Control the app from Telegram (with a PIN)", "minutes": 5,
+                "goal": "Check status and approve setups from your phone safely.",
+                "explain": "The bot answers only your chat. /status, /positions, /setups, /price, /brief and /ask are safe to use any time. "
+                           "/approve, /kill and /resume need your PIN — and the bot deletes the message with your PIN immediately.",
+                "steps": [
+                    {"text": "Alerts → Telegram bot → set a 4–8 digit PIN (not your birthday) → switch the bot on.", L: "#/alerts"},
+                    {"text": "In Telegram send /help to your bot, then /status."},
+                    {"text": "Practise the emergency brake on practice mode: /kill PIN, check the app shows KILL SWITCH ON, then /resume PIN."},
+                ],
+                "quiz": [{"q": "Someone gets your phone. What protects you from /approve or /kill?", "options": ["Nothing", "Your PIN (and 5 wrong tries lock it)", "The bot name"],
+                          "answer": 1, "why": "Risky commands need the PIN; repeated wrong PINs lock those commands for 15 minutes."}],
+            },
+            {
+                "id": "pow-ai", "title": "Morning brief, weekly coach and 'Explain this chart'", "minutes": 5,
+                "goal": "Let Claude prepare your day and review your week.",
+                "explain": "The morning brief lists today's high-impact news for your markets, each market's trend, your open trades and waiting setups. "
+                           "The weekly coach reads your closed trades and journal notes and gives three lessons. 'Explain this chart' turns the app's numbers into "
+                           "plain words with reasons for both directions. None of them predict prices.",
+                "steps": [
+                    {"text": "AI Assistant → turn on the morning brief, choose your time (e.g. 08:00) and press 'Send a brief now'.", L: "#/assistant"},
+                    {"text": "Turn on the weekly coach (Sunday evening)."},
+                    {"text": "Terminal → 🤖 Explain this chart on 4H, then on 15m. Compare the two answers.", L: "#/terminal"},
+                ],
+                "quiz": [{"q": "The brief says 'USD CPI at 15:30'. Good plan?", "options": ["Open big USD trades at 15:29", "Avoid new USD trades around that time", "Remove stops"],
+                          "answer": 1, "why": "High-impact news causes spikes and slippage; the news filter blocks new trades around it for a reason."}],
+            },
+            {
+                "id": "pow-lines", "title": "Draw lines and set price alerts", "minutes": 5,
+                "goal": "Mark important levels and get told when price reaches them.",
+                "explain": "A horizontal line marks a level (yesterday's high, a round number). A trend line connects two swing points. Turn the bell 🔔 on and you get a "
+                           "one-time alert when price crosses the line — so you don't have to stare at the screen.",
+                "steps": [
+                    {"text": "Terminal → '— Horizontal line' → tap the chart at a recent high.", L: "#/terminal"},
+                    {"text": "Pick '🔔 Price alert line' and tap a level just above the current price."},
+                    {"text": "'／ Trend line' → tap two lows. Under the chart, give the lines a label and switch the bell on or off."},
+                    {"text": "Turn on RSI and Volume with the indicator chips; open Multi-chart to see 4H/1H/15m/5m together.", L: "#/charts"},
+                ],
+                "quiz": [{"q": "After a price alert fires, what happens to it?", "options": ["It keeps firing every second", "It switches off (one-time) until you turn it on again"],
+                          "answer": 1, "why": "One-time alerts avoid spamming you when price chops around the line."}],
+            },
+            {
+                "id": "pow-tools", "title": "Calculator, what-if simulator and the strategy race", "minutes": 6,
+                "goal": "Size correctly, understand luck, and compare strategies fairly.",
+                "explain": "The calculator turns 'I accept to lose $5' into the right trade size. The simulator replays your numbers 2,000 times so you see normal losing "
+                           "streaks before they happen. The strategy race paper-trades every strategy at the same time in R — the fairest comparison.",
+                "steps": [
+                    {"text": "Calculator: pick a market, set entry, stop and $5 risk → read size and 'must win at least'.", L: "#/tools"},
+                    {"text": "Simulator: try 40% win rate with 2R winners, then 40% with 1R winners — see the difference."},
+                    {"text": "Strategy lab → Strategy race: check again after a week; don't trust anything under 30 trades.", L: "#/lab"},
+                ],
+                "quiz": [{"q": "40% win rate, winners 1R, losers 1R. Long-run result?", "options": ["Profit", "Loss: 0.4×1 − 0.6×1 = −0.2R per trade"],
+                          "answer": 1, "why": "Expectancy is negative; no position size can fix that."}],
+            },
+            {
+                "id": "pow-markets", "title": "Gold, oil, indices and Saudi stocks", "minutes": 5,
+                "goal": "Add more markets safely and know which ones are watch-only.",
+                "explain": "Gold, oil and indices trade through your forex broker (names differ per broker) and move more than currencies — use smaller risk at first. "
+                           "Saudi stocks (Tadawul) are watch-and-research only here: charts, AI explanations and price alerts work, but the app never places orders for them.",
+                "steps": [
+                    {"text": "Market overview → 'Gold, oil & indices' → add Gold. It appears in the Terminal watchlist.", L: "#/overview"},
+                    {"text": "Market overview → 'Saudi stocks' → add Aramco (2222) and the TASI index.", L: "#/overview"},
+                    {"text": "Terminal → 'Stocks & more' tab → open 2222.SR → set a price alert line.", L: "#/terminal"},
+                ],
+                "quiz": [{"q": "Can this app buy Saudi stocks for you?", "options": ["Yes, automatically", "No — watch and research only"], "answer": 1,
+                          "why": "Saudi stocks need a CMA-licensed broker with an API; here they are for analysis and alerts."}],
+            },
+        ],
+    },
 ]
 
 

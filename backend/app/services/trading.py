@@ -235,7 +235,9 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
     positions += [OpenPos(o.symbol, o.side, 0) for o in pending]
     controls = state.get(db, "controls")
     from .news import news_check
-    extra = [("pair enabled for trading", symbol not in controls.get("disabled_symbols", []), symbol)]
+    from .tadawul import is_watch_only
+    extra = [("pair enabled for trading", symbol not in controls.get("disabled_symbols", []), symbol),
+             ("market is tradable (not watch-only)", not is_watch_only(db, symbol), "Saudi stocks are for watching and research only")]
     if controls.get("session_filter"):
         h, a, b = utcnow().hour, int(controls["session_start_utc"]), int(controls["session_end_utc"])
         inside = a <= h < b if a < b else (h >= a or h < b)

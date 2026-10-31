@@ -616,3 +616,29 @@ class RaceTrade(Base):
     exit_time: Mapped[datetime | None] = mapped_column(TS, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     r: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class AcademyDay(Base):
+    """A day on which the user learned something in the Academy (for streaks)."""
+
+    __tablename__ = "academy_days"
+    __table_args__ = (UniqueConstraint("user_id", "day", name="uq_academy_day"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    day: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD in the user's time zone
+
+
+class ExamResult(Base):
+    """Academy readiness exam attempt."""
+
+    __tablename__ = "exam_results"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    score: Mapped[int] = mapped_column(Integer)
+    passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    questions: Mapped[list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    cert_id: Mapped[str] = mapped_column(String(24), default="")

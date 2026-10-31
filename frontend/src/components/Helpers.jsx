@@ -110,7 +110,7 @@ export function ExplainChart({ symbol, tf }) {
   const [run, busy] = useAction();
   return (
     <>
-      <button className="btn sm ghost" disabled={busy} onClick={() => { setRes({ loading: true }); run(() => api.post("/intel/chart-explain", { symbol, tf })).then(setRes).catch(() => setRes(null)); }}>
+      <button className="btn sm ghost" data-tour="explain" disabled={busy} onClick={() => { setRes({ loading: true }); run(() => api.post("/intel/chart-explain", { symbol, tf })).then(setRes).catch(() => setRes(null)); }}>
         🤖 Explain this chart
       </button>
       {res && (

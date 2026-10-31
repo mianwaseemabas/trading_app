@@ -44,7 +44,9 @@ ASSET_WORDS = {
     "EUR": ["ecb", "lagarde", "euro", "eurozone", "germany", "france"], "GBP": ["boe", "bank of england", "pound", "sterling", "uk ", "britain"],
     "JPY": ["boj", "bank of japan", "yen", "japan"], "BTC": ["bitcoin", "btc"], "ETH": ["ether", "ethereum", " eth"],
     "SOL": ["solana", " sol "], "CRYPTO": ["crypto", "stablecoin", "binance", "coinbase", "sec ", "etf"], "OIL": ["oil", "opec", "crude"],
-    "GOLD": ["gold", "bullion"],
+    "GOLD": ["gold", "bullion", "silver", "precious metal"],
+    "INDICES": ["s&p", "nasdaq", "dow jones", "wall street", "stocks", "equities", "dax", "ftse", "stock market"],
+    "SAUDI": ["saudi", "tadawul", "tasi", "aramco", "riyadh", "opec+"],
 }
 
 
@@ -112,11 +114,10 @@ _last = {"t": 0.0}
 def watched_assets(db: Session) -> set:
     strat = state.get(db, "strategy")
     cc = state.get(db, "crypto")
+    from .instruments_meta import headline_assets
     out = {"USD"}
     for s in strat["symbols"]:
-        if len(s) == 6:
-            out |= {s[:3], s[3:]}
-        out.add(s)
+        out |= headline_assets(s)
     for s in cc.get("symbols", []):
         out |= {s.replace("USDT", "").replace("USDC", ""), "CRYPTO"}
     return out

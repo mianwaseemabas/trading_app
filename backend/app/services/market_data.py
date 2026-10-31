@@ -22,6 +22,23 @@ DEFAULT_SPECS = {
     "AUDUSD": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="AUD", currency_profit="USD"),
     "USDCHF": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="USD", currency_profit="CHF"),
     "USDCAD": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="USD", currency_profit="CAD"),
+    # Commodities and indices (typical CFD sizes; the real broker values replace these once a broker is connected)
+    "XAUUSD": dict(digits=2, point=0.01, tick_size=0.01, contract_size=100, currency_base="XAU", currency_profit="USD"),
+    "GOLD": dict(digits=2, point=0.01, tick_size=0.01, contract_size=100, currency_base="XAU", currency_profit="USD"),
+    "XAGUSD": dict(digits=3, point=0.001, tick_size=0.001, contract_size=5000, currency_base="XAG", currency_profit="USD"),
+    "SILVER": dict(digits=3, point=0.001, tick_size=0.001, contract_size=5000, currency_base="XAG", currency_profit="USD"),
+    "USOIL": dict(digits=2, point=0.01, tick_size=0.01, contract_size=1000, currency_base="WTI", currency_profit="USD"),
+    "XTIUSD": dict(digits=2, point=0.01, tick_size=0.01, contract_size=1000, currency_base="WTI", currency_profit="USD"),
+    "OIL_CRUDE": dict(digits=2, point=0.01, tick_size=0.01, contract_size=1000, currency_base="WTI", currency_profit="USD"),
+    "UKOIL": dict(digits=2, point=0.01, tick_size=0.01, contract_size=1000, currency_base="BRN", currency_profit="USD"),
+    "OIL_BRENT": dict(digits=2, point=0.01, tick_size=0.01, contract_size=1000, currency_base="BRN", currency_profit="USD"),
+    "US500": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="SPX", currency_profit="USD"),
+    "US100": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="NDX", currency_profit="USD"),
+    "NAS100": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="NDX", currency_profit="USD"),
+    "US30": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="DJI", currency_profit="USD"),
+    "DE40": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="DAX", currency_profit="EUR"),
+    "GER40": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="DAX", currency_profit="EUR"),
+    "UK100": dict(digits=1, point=0.1, tick_size=0.1, contract_size=1, currency_base="FTS", currency_profit="GBP"),
 }
 
 
@@ -176,7 +193,10 @@ def conversion_rate(ccy: str, account_ccy: str, quotes: dict[str, Quote]) -> flo
 
 
 # ------------------------------------------------------------------ simulator
-SIM_START = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 150.00, "AUDUSD": 0.6600, "USDCHF": 0.8800, "USDCAD": 1.3600}
+SIM_START = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 150.00, "AUDUSD": 0.6600, "USDCHF": 0.8800, "USDCAD": 1.3600,
+             "XAUUSD": 2650.0, "GOLD": 2650.0, "XAGUSD": 31.0, "SILVER": 31.0, "USOIL": 72.0, "XTIUSD": 72.0, "OIL_CRUDE": 72.0,
+             "UKOIL": 76.0, "OIL_BRENT": 76.0, "US500": 5900.0, "US100": 20800.0, "NAS100": 20800.0, "US30": 43000.0, "DE40": 19500.0,
+             "GER40": 19500.0, "UK100": 8200.0}
 
 
 def _sim_candles(start_price: float, start_time: datetime, n: int, tf: str, digits: int, rng: random.Random,

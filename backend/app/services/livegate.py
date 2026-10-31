@@ -101,6 +101,10 @@ def evidence(db: Session, user: User | None = None) -> dict:
     mfa = bool(user and user.totp_enabled)
     items["credentials_secured"] = {"passed": mfa and bool(g.get("notes", {}).get("credentials_secured")),
                                     "detail": ("2FA on" if mfa else "turn on 2FA for your account") + " + describe key restrictions (IP, no withdrawals)"}
+    from ..models import ExamResult
+    ex = db.scalar(select(ExamResult).where(ExamResult.passed.is_(True), *( [ExamResult.user_id == user.id] if user else [] )).limit(1))
+    items["academy_exam_passed"] = {"passed": ex is not None,
+                                    "detail": f"readiness exam passed with {ex.score}%" if ex else "pass the Academy readiness exam (Academy page)"}
     items["broker_legal_checked"] = {"passed": bool(g.get("notes", {}).get("broker_legal_checked")),
                                      "detail": "write what you checked (broker licence, Saudi CMA guidance, tax) — manual"}
     return items

@@ -223,6 +223,7 @@ function OrderPanel({ symbol, t, quote, onPlaced }) {
     toast(crypto ? `Bought ${r.volume} ${symbol} @ ${r.price}${r.status === "CLOSED" ? ` — closed again: ${r.close_reason}` : ""}` : `Order sent: ${side} ${r.volume} ${symbol} (${r.status})`);
     onPlaced && onPlaced();
   }).catch(() => {});
+  if (t?.venue === "watch") return <div className="tcard order-panel"><div className="tc-title">Watch only</div><p className="small">🇸🇦 Saudi stocks are for watching and research in this app: chart, AI explanation and price-alert lines work, orders do not.</p><p className="tiny muted">Prices from Yahoo Finance, may be delayed. To trade Saudi stocks use a CMA-licensed broker.</p></div>;
   if (!can("trading.manual")) return <div className="tcard order-panel"><div className="tc-title">New order</div><p className="muted small">Your account can view but not trade.</p></div>;
   return (
     <div className="tcard order-panel">

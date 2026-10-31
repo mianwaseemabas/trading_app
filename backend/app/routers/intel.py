@@ -22,6 +22,9 @@ router = APIRouter(prefix="/api/intel", tags=["intel"])
 
 
 def _venue(db: Session, symbol: str) -> str:
+    from ..services.tadawul import is_watch_only
+    if is_watch_only(db, symbol):
+        return "watch"
     return "crypto" if symbol in set(state.get(db, "crypto").get("symbols", [])) else "broker"
 
 

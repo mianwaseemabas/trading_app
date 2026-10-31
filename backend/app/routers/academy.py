@@ -14,7 +14,7 @@ from .. import state
 from ..audit import audit
 from ..db import get_db
 from ..deps import client_ip, require
-from ..models import AcademyProgress, BacktestRun, Position, User, utcnow
+from ..models import AcademyDay, AcademyProgress, BacktestRun, ExamResult, Position, User, utcnow
 from ..secretbox import decrypt
 from ..services.academy_content import COURSES, all_lessons, lesson
 
@@ -53,6 +53,36 @@ def _progress(db: Session, user: User) -> dict[str, AcademyProgress]:
     return {p.lesson_id: p for p in db.scalars(select(AcademyProgress).where(AcademyProgress.user_id == user.id)).all()}
 
 
+def _today(db: Session) -> str:
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(state.get(db, "ai_jobs").get("timezone") or "Asia/Riyadh")
+    return utcnow().astimezone(tz).strftime("%Y-%m-%d")
+
+
+def touch_day(db: Session, user: User) -> None:
+    from sqlalchemy.dialects.postgresql import insert
+    db.execute(insert(AcademyDay).values(user_id=user.id, day=_today(db)).on_conflict_do_nothing(constraint="uq_academy_day"))
+
+
+def streak(db: Session, user: User) -> dict:
+    from datetime import date, timedelta
+    days = sorted({date.fromisoformat(d) for d in db.scalars(select(AcademyDay.day).where(AcademyDay.user_id == user.id)).all()})
+    if not days:
+        return {"current": 0, "best": 0, "days": 0, "today": False}
+    best = run = 1
+    for a, b in zip(days, days[1:]):
+        run = run + 1 if b - a == timedelta(days=1) else 1
+        best = max(best, run)
+    today = date.fromisoformat(_today(db))
+    cur = 0
+    if days[-1] >= today - timedelta(days=1):
+        cur, d = 1, days[-1]
+        s = set(days)
+        while d - timedelta(days=1) in s:
+            cur, d = cur + 1, d - timedelta(days=1)
+    return {"current": cur, "best": best, "days": len(days), "today": days[-1] == today}
+
+
 def _row(db: Session, user: User, lid: str) -> AcademyProgress:
     p = db.scalar(select(AcademyProgress).where(AcademyProgress.user_id == user.id, AcademyProgress.lesson_id == lid))
     if p is None:
@@ -80,7 +110,9 @@ def overview(user: User = Depends(require("dashboard.view")), db: Session = Depe
                        "check": l.get("check"), "check_ok": checks.get(l.get("check")) if l.get("check") else None})
         courses.append({"id": c["id"], "title": c["title"], "icon": c["icon"], "summary": c["summary"], "lessons": ls,
                         "done": sum(x["done"] for x in ls), "total": len(ls)})
-    return {"courses": courses, "done": done, "total": total, "next": nxt,
+    ex = db.scalar(select(ExamResult).where(ExamResult.user_id == user.id, ExamResult.passed.is_(True)).order_by(ExamResult.score.desc()).limit(1))
+    return {"courses": courses, "done": done, "total": total, "next": nxt, "streak": streak(db, user),
+            "exam": {"passed": bool(ex), "score": ex.score if ex else None}, "certificate": bool(ex) and done == total,
             "checks": [{"key": k, "label": CHECK_LABEL[k], "ok": v} for k, v in checks.items()],
             "ai_ready": checks["ai_on"]}
 
@@ -115,6 +147,7 @@ def mark_step(lid: str, body: StepIn, user: User = Depends(require("dashboard.vi
     s = set(p.steps_done or [])
     (s.add if body.done else s.discard)(body.step)
     p.steps_done, p.updated_at = sorted(s), utcnow()
+    touch_day(db, user)
     db.commit()
     return {"steps_done": p.steps_done}
 
@@ -135,6 +168,7 @@ def quiz(lid: str, body: QuizIn, user: User = Depends(require("dashboard.view"))
     score = round(100 * sum(r["correct"] for r in res) / max(1, len(qs)))
     p = _row(db, user, lid)
     p.quiz_score, p.updated_at = max(score, p.quiz_score or 0), utcnow()
+    touch_day(db, user)
     db.commit()
     return {"score": score, "results": res, "passed": score == 100}
 
@@ -149,6 +183,7 @@ def complete(lid: str, user: User = Depends(require("dashboard.view")), db: Sess
         raise HTTPException(400, "Answer the quiz correctly first (you can retry as often as you like)")
     p.completed_at = p.completed_at or utcnow()
     p.updated_at = utcnow()
+    touch_day(db, user)
     db.commit()
     return {"done": True}
 
@@ -212,5 +247,75 @@ def tutor(body: TutorIn, request: Request, user: User = Depends(require("ai.use"
         system += "\n\nAPP DATA (live, JSON):\n" + _context(db)[:6000]
     reply = _call(ai["provider"], ai["model"], decrypt(ai["api_key_enc"]), system, msgs)
     audit(db, "academy.tutor", user=user, ip=client_ip(request), details={"lesson": body.lesson_id})
+    touch_day(db, user)
     db.commit()
     return {"reply": reply}
+
+
+# ------------------------------------------------------------------ readiness exam + certificate
+EXAM_SIZE = 15
+PASS_PCT = 80
+
+
+def _pool() -> dict:
+    out = {}
+    for c, l in all_lessons():
+        for i, q in enumerate(l.get("quiz", [])):
+            out[f"{l['id']}:{i}"] = {**q, "lesson": l["title"], "course": c["title"]}
+    return out
+
+
+@router.post("/exam/start")
+def exam_start(user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
+    import random
+    pool = _pool()
+    ids = random.sample(sorted(pool), min(EXAM_SIZE, len(pool)))
+    ex = ExamResult(user_id=user.id, score=0, passed=False, questions=ids)
+    db.add(ex)
+    db.commit()
+    return {"exam_id": ex.id, "pass_pct": PASS_PCT,
+            "questions": [{"id": k, "q": pool[k]["q"], "options": pool[k]["options"], "lesson": pool[k]["lesson"]} for k in ids]}
+
+
+class ExamIn(BaseModel):
+    answers: dict[str, int]
+
+
+@router.post("/exam/{exam_id}/submit")
+def exam_submit(exam_id: int, body: ExamIn, user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
+    import secrets
+    ex = db.get(ExamResult, exam_id)
+    if not ex or ex.user_id != user.id:
+        raise HTTPException(404, "Exam not found")
+    if ex.finished_at:
+        raise HTTPException(409, "This exam was already submitted — start a new one")
+    if (utcnow() - ex.started_at).total_seconds() > 3 * 3600:
+        raise HTTPException(409, "This exam is older than 3 hours — start a new one")
+    pool = _pool()
+    res = []
+    for k in ex.questions:
+        q = pool.get(k)
+        if not q:
+            continue
+        a = body.answers.get(k)
+        res.append({"id": k, "q": q["q"], "correct": a == q["answer"], "answer": q["answer"], "why": q["why"], "lesson": q["lesson"]})
+    score = round(100 * sum(r["correct"] for r in res) / max(1, len(res)))
+    ex.score, ex.passed, ex.finished_at = score, score >= PASS_PCT, utcnow()
+    if ex.passed:
+        ex.cert_id = "QVX-" + secrets.token_hex(4).upper()
+    touch_day(db, user)
+    db.commit()
+    return {"score": score, "passed": ex.passed, "pass_pct": PASS_PCT, "results": res}
+
+
+@router.get("/certificate")
+def certificate(user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
+    ex = db.scalar(select(ExamResult).where(ExamResult.user_id == user.id, ExamResult.passed.is_(True)).order_by(ExamResult.score.desc()).limit(1))
+    prog = _progress(db, user)
+    total = sum(1 for _ in all_lessons())
+    done = sum(1 for p in prog.values() if p.completed_at)
+    if not ex or done < total:
+        raise HTTPException(400, f"Finish all lessons ({done}/{total}) and pass the readiness exam first")
+    last = max(p.completed_at for p in prog.values() if p.completed_at)
+    return {"name": user.full_name or user.username, "score": ex.score, "cert_id": ex.cert_id, "exam_date": ex.finished_at,
+            "lessons": total, "completed": max(last, ex.finished_at), "streak": streak(db, user)}
