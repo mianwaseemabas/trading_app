@@ -27,19 +27,22 @@ import Charts from "./pages/Charts.jsx";
 import Tour from "./components/Tour.jsx";
 import Tools from "./pages/Tools.jsx";
 import Opportunities from "./pages/Opportunities.jsx";
+import Home from "./pages/Home.jsx";
+import { PAGE_HELP } from "./help.js";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
+  { k: "home", label: "Home", icon: "⌂", perm: "dashboard.view", el: Home, sec: "Trade", easy: true },
   { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true, sec: "Trade", tab: true },
-  { k: "opps", label: "Opportunities", icon: "🎯", perm: "signals.view", el: Opportunities, sec: "Trade", tab: true },
+  { k: "opps", label: "Opportunities", icon: "🎯", perm: "signals.view", el: Opportunities, sec: "Trade", tab: true, easy: true },
   { k: "charts", label: "Multi-chart", icon: "▦", perm: "market.view", el: Charts, sec: "Trade" },
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard, sec: "Trade" },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live, sec: "Trade" },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups, sec: "Trade" },
-  { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts, sec: "Trade", tab: true },
-  { k: "academy", label: "Academy (learn)", icon: "🎓", perm: "dashboard.view", el: Academy, sec: "Learn", tab: true },
+  { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts, sec: "Trade", tab: true, easy: true },
+  { k: "academy", label: "Academy (learn)", icon: "🎓", perm: "dashboard.view", el: Academy, sec: "Learn", tab: true, easy: true },
   { k: "assistant", label: "AI Assistant", icon: "✦", perm: "ai.use", el: Assistant, sec: "Learn" },
   { k: "guide", label: "Guide", icon: "?", perm: null, el: Guide, sec: "Learn" },
   { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview, sec: "Research" },
@@ -60,7 +63,7 @@ const ROUTES = [
 ];
 
 function useHashRoute() {
-  const get = () => (window.location.hash.replace(/^#\/?/, "") || "terminal").split("?")[0];
+  const get = () => (window.location.hash.replace(/^#\/?/, "") || "").split("?")[0];
   const [r, setR] = useState(get);
   useEffect(() => {
     const h = () => setR(get());
@@ -169,7 +172,32 @@ function usePrivacy() {
   return [on, () => setOn(!on)];
 }
 
-function TopBar({ user, logout, onMenu }) {
+function ModeSwitch({ ui }) {
+  return (
+    <div className="mode-switch">
+      <div className="seg sm">
+        <button className={ui.view === "easy" ? "active" : ""} onClick={() => ui.setView("easy")} title="Only the pages you need every day">Easy</button>
+        <button className={ui.view === "advanced" ? "active" : ""} onClick={() => ui.setView("advanced")} title="All pages and settings">Advanced</button>
+      </div>
+      <button className={`btn ghost sm ${ui.explain ? "on-explain" : ""}`} title="Explain mode: a short 'what is this / what to do' box on every page" onClick={() => ui.setExplain(!ui.explain)}>💡<span className="hide-sm"> Explain</span></button>
+      {ui.view !== ui.prefs.mode && <button className="btn ghost sm hide-sm" title="Open the app in this view every time" onClick={() => ui.makeDefault()}>☆ make default</button>}
+    </div>
+  );
+}
+
+function ExplainBox({ k, onHide }) {
+  const h = PAGE_HELP[k];
+  if (!h) return null;
+  return (
+    <div className="explain-box">
+      <div className="row between"><b>💡 {h[0]}</b><button className="btn ghost sm" onClick={onHide} title="Turn explain mode off">Hide tips</button></div>
+      <div className="small">{h[1]}</div>
+      {h[2].length > 0 && <ul className="small">{h[2].map((t) => <li key={t}>{t}</li>)}</ul>}
+    </div>
+  );
+}
+
+function TopBar({ user, logout, onMenu, ui }) {
   const can = (p) => user.permissions.includes(p);
   const [privacy, togglePrivacy] = usePrivacy();
   const { data } = useApi(can("dashboard.view") ? "/system/status" : null, { interval: 10000 });
@@ -185,6 +213,7 @@ function TopBar({ user, logout, onMenu }) {
         {data && data.reconciliation && !data.reconciliation.ok && <Badge tone="bad" title={data.reconciliation.detail}>RECONCILIATION</Badge>}
       </div>
       <div className="row gap">
+        <ModeSwitch ui={ui} />
         {can("dashboard.view") && <Bell />}
         <button className="btn ghost sm" title="Hide personal and account details (for screenshots)" onClick={togglePrivacy}>{privacy ? "🙈" : "👁"}<span className="hide-sm"> {privacy ? "private" : "details"}</span></button>
         <span className="muted small pii hide-sm">{user.full_name || user.username}{user.is_admin ? " · admin" : ""}</span>
@@ -199,12 +228,17 @@ export default function App() {
   const route = useHashRoute();
   const toast = useToast();
   const [menu, setMenu] = useState(false);
+  const [prefs, setPrefs] = useState({ mode: "easy", explain: true });
+  const [view, setViewRaw] = useState(() => { try { return sessionStorage.getItem("q.view"); } catch { return null; } });
 
   const applyUser = useCallback((u) => {
     if (u?.csrf_token) setCsrf(u.csrf_token);
     setUser(u);
   }, []);
 
+  useEffect(() => {
+    if (user && !user.must_change_password) api.get("/me/prefs").then(setPrefs).catch(() => {});
+  }, [user?.username]); // eslint-disable-line
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
     api.get("/auth/me").then(applyUser).catch(() => setUser(null));
@@ -234,21 +268,30 @@ export default function App() {
   }
 
   const allowed = ROUTES.filter((r) => !r.perm || user.permissions.includes(r.perm));
-  const current = allowed.find((r) => r.k === route) || allowed[0];
+  const mode = view || prefs.mode;
+  const ui = {
+    view: mode, prefs, explain: prefs.explain,
+    setView: (v) => { setViewRaw(v); try { sessionStorage.setItem("q.view", v); } catch { /* ignore */ } if (v === "easy" && !allowed.find((r) => r.k === route && r.easy)) window.location.hash = "#/home"; },
+    setExplain: (v) => { setPrefs((p) => ({ ...p, explain: v })); api.put("/me/prefs", { explain: v }).catch(() => {}); },
+    makeDefault: () => api.put("/me/prefs", { mode }).then((p) => { setPrefs(p); toast(`${mode === "easy" ? "Easy" : "Advanced"} is now your default view`); }).catch(() => {}),
+  };
+  const navItems = mode === "easy" ? allowed.filter((r) => r.easy) : allowed;
+  const current = allowed.find((r) => r.k === route) || allowed.find((r) => r.k === (mode === "easy" ? "home" : "terminal")) || allowed[0];
   const Page = current.el;
 
   return (
-    <AuthCtx.Provider value={{ user, setUser: applyUser, can: (p) => user.permissions.includes(p) }}>
+    <AuthCtx.Provider value={{ user, setUser: applyUser, can: (p) => user.permissions.includes(p), ui }}>
       <div className={`shell ${current.flush ? "compact" : ""}`}>
         {menu && <div className="nav-scrim" onClick={() => setMenu(false)} />}
         <nav className={`side ${menu ? "open" : ""}`}>
           <div className="brand"><span className="logo">Q</span><span>Qivynex<small className="brand-sub">Intelligence Platform</small></span>
             <button className="nav-close" onClick={() => setMenu(false)} aria-label="Close menu">✕</button></div>
           <div className="nav-scroll">
-            {[...new Set(allowed.map((r) => r.sec))].map((sec) => (
-              <div key={sec} className="nav-sec">
-                <div className="nav-h">{sec}</div>
-                {allowed.filter((r) => r.sec === sec).map((r) => (
+            {mode === "easy" && <div className="nav-h">Easy mode</div>}
+            {[...new Set(navItems.map((r) => (mode === "easy" ? "" : r.sec)))].map((sec) => (
+              <div key={sec || "easy"} className="nav-sec">
+                {sec && <div className="nav-h">{sec}</div>}
+                {navItems.filter((r) => mode === "easy" || r.sec === sec).map((r) => (
                   <a key={r.k} href={`#/${r.k}`} title={r.label} className={r.k === current.k ? "nav on" : "nav"} onClick={() => setMenu(false)}>
                     <span className="nav-i">{r.icon}</span><span className="nav-t">{r.label}</span>
                   </a>
@@ -256,18 +299,20 @@ export default function App() {
               </div>
             ))}
           </div>
+          {mode === "easy" && <button className="btn ghost sm nav-adv" onClick={() => { ui.setView("advanced"); setMenu(false); }}>⚙ Show all pages (Advanced)</button>}
           <div className="side-foot muted small">Automated trading can lose money. Demo first.</div>
         </nav>
         <main className="main">
-          <TopBar user={user} logout={logout} onMenu={() => setMenu(true)} />
+          <TopBar user={user} logout={logout} onMenu={() => setMenu(true)} ui={ui} />
           <div className={`page ${current.flush ? "flush" : ""}`}>
+            {ui.explain && <div className={current.flush ? "explain-flush" : ""}><ExplainBox k={current.k} onHide={() => ui.setExplain(false)} /></div>}
             {!current.flush && <h1>{current.label}</h1>}
             <Page />
           </div>
         </main>
         <Tour />
         <nav className="tabbar">
-          {allowed.filter((r) => r.tab).map((r) => (
+          {(mode === "easy" ? navItems : allowed.filter((r) => r.tab)).map((r) => (
             <a key={r.k} href={`#/${r.k}`} className={r.k === current.k ? "on" : ""}><span>{r.icon}</span><small>{r.label.split(" ")[0]}</small></a>
           ))}
           <button onClick={() => setMenu(true)}><span>☰</span><small>More</small></button>

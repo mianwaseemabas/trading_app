@@ -26,6 +26,27 @@ export function TwoFactorSetup({ onDone }) {
   );
 }
 
+function ViewPrefs() {
+  const { data, reload } = useApi("/me/prefs");
+  const [run] = useAction();
+  if (!data) return null;
+  const put = (b) => run(() => api.put("/me/prefs", b), "Saved — applies next time you open the app").then(reload);
+  return (
+    <Card title="How the app opens for me">
+      <div className="row gap wrap" style={{ alignItems: "center" }}>
+        <span className="small">Default view:</span>
+        <div className="seg">
+          <button className={data.mode === "easy" ? "active" : ""} onClick={() => put({ mode: "easy" })}>Easy</button>
+          <button className={data.mode === "advanced" ? "active" : ""} onClick={() => put({ mode: "advanced" })}>Advanced</button>
+        </div>
+        <label className="check small"><input type="checkbox" checked={data.explain} onChange={(e) => put({ explain: e.target.checked })} /> 💡 Explain mode (help box on every page)</label>
+      </div>
+      <p className="tiny muted"><b>Easy</b>: Home, Opportunities, Alerts and Academy — what you need every day. <b>Advanced</b>: every page and setting.
+        You can switch any time with Easy / Advanced at the top; “☆ make default” there saves it too.</p>
+    </Card>
+  );
+}
+
 export default function Account() {
   const { user, setUser } = useAuth();
   const toast = useToast();
@@ -35,6 +56,7 @@ export default function Account() {
   const [dis, setDis] = useState({ password: "", code: "" });
   return (
     <div className="stack">
+      <ViewPrefs />
       <div className="grid two">
         <Card title="Profile">
           <div className="kv">

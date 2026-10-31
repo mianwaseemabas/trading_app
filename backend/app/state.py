@@ -125,6 +125,8 @@ DEFAULTS: dict[str, Any] = {
     "news_auto": {"breakout": False, "ai_filter": False, "wait_min": 15, "window_min": 120, "min_confidence": 0.7},
     "news_ai": {},
     "opportunity_cfg": {"auto_proven": False},
+    "ui_prefs": {},
+    "autopilot": {},
     "opportunities": {},
     "opportunities_sent": [],
     "headline_status": {"at": "", "feeds": {}},
