@@ -74,7 +74,8 @@ def watchlist(db: Session) -> list[dict]:
             chg = round(float(cst["changes"][sym]), 3)
         out.append({"symbol": sym, "asset": asset_class(sym, crypto_syms), "venue": cc["exchange"] if sym in crypto_syms else "broker",
                     "bid": bid, "ask": q.ask if q else None, "age_s": (utcnow() - q.collected_at).total_seconds() if q else None,
-                    "change_24h": chg, "digits": digits_of(db, sym), "favorite": sym in fav, "spark": spark[-24:]})
+                    "change_24h": chg, "digits": digits_of(db, sym), "favorite": sym in fav, "spark": spark[-24:],
+                    "route": route_for(db, sym)})
     from .tadawul import symbols as tad_syms
     tst = state.get(db, "tadawul").get("status", {})
     for sym in tad_syms(db):
@@ -85,7 +86,7 @@ def watchlist(db: Session) -> list[dict]:
         out.append({"symbol": sym, "asset": "saudi stock", "venue": "watch", "name": (tst.get(sym) or {}).get("name", sym),
                     "bid": q.bid if q else None, "ask": q.ask if q else None, "age_s": (utcnow() - q.collected_at).total_seconds() if q else None,
                     "change_24h": chg, "digits": 2, "favorite": sym in fav, "spark": [float(x) for x in md.load_candles(db, sym, "H1", limit=24)["close"]],
-                    "watch_only": True})
+                    "watch_only": True, "route": route_for(db, sym)})
     return out
 
 
@@ -280,3 +281,39 @@ def account_bar(db: Session, venue: str) -> dict:
             "equity": round(acct.equity, 2), "free_margin": round(acct.free_margin, 2), "margin": round(margin or 0, 2),
             "margin_level": round(acct.equity / margin * 100, 1) if margin else None, "leverage": acct.leverage,
             "open_pl": open_pl, "open_positions": len(positions), "today_pl": today, "today_roi": round(today / base * 100, 2) if base else None}
+
+
+BROKER_NAME = {"capital": "Capital.com", "ctrader": "cTrader", "mt5": "MT5", "none": "broker", "": "broker"}
+FX_ROUTE = {"OFF": ("off", "Off — no orders", "OFF"), "SIGNALS_ONLY": ("signals", "Signals only — no orders", "SIGNALS"),
+            "PAPER": ("practice", "App practice account (paper money)", "PRACTICE")}
+CRYPTO_ROUTE = {"OFF": ("off", "Crypto off — no orders", "OFF"), "PAPER": ("practice", "App crypto practice (paper USDT)", "PRACTICE")}
+
+
+def route_for(db: Session, symbol: str) -> dict:
+    """Where an order for this market would go right now, in plain words, and whether auto-trade is on there."""
+    from .automation import auto_ok
+    from .tadawul import is_watch_only
+    if is_watch_only(db, symbol):
+        return {"kind": "watch", "label": "Watch only — no orders (Saudi stock)", "short": "WATCH", "real": False, "auto": False, "mode": ""}
+    cc = state.get(db, "crypto")
+    if symbol in set(cc.get("symbols", [])):
+        m = cc.get("mode", "OFF")
+        ex = cc.get("exchange", "binance").capitalize()
+        if m in CRYPTO_ROUTE:
+            kind, label, short = CRYPTO_ROUTE[m]
+        elif m == "TEST":
+            kind, label, short = "demo", f"{ex} TESTNET (fake money on the exchange)", f"{ex.upper()} TEST"
+        else:
+            kind, label, short = "live", f"{ex} LIVE — REAL MONEY", f"{ex.upper()} LIVE"
+        pm = {"PAPER": "CRYPTO_PAPER", "TEST": "CRYPTO_TEST", "LIVE": "CRYPTO_LIVE"}.get(m)
+        return {"kind": kind, "label": label, "short": short, "real": m == "LIVE", "auto": bool(pm and auto_ok(db, pm)), "mode": pm or ""}
+    tr = state.get(db, "trading")["mode"]
+    b = BROKER_NAME.get(state.get(db, "brokers").get("active") or "", "broker")
+    if tr in FX_ROUTE:
+        kind, label, short = FX_ROUTE[tr]
+    elif tr == "MT5_DEMO":
+        kind, label, short = "demo", f"{b} DEMO account (fake money at the broker)", f"{b.upper()} DEMO"
+    else:
+        kind, label, short = "live", f"{b} LIVE — REAL MONEY", f"{b.upper()} LIVE"
+    return {"kind": kind, "label": label, "short": short, "real": tr == "MT5_LIVE", "auto": bool(tr in ("PAPER", "MT5_DEMO", "MT5_LIVE") and auto_ok(db, tr)),
+            "mode": tr}

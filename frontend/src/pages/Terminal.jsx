@@ -26,7 +26,7 @@ function TopStats({ t, symbol }) {
     <div className="term-top">
       <div className="row gap">
         <SymbolBadge symbol={symbol} asset={t?.asset} />
-        <div><div className="term-sym">{symbol}</div><div className="small muted">{t?.asset} · {t?.venue === "crypto" ? a.venue : "broker"}</div></div>
+        <div><div className="term-sym">{symbol}</div><div className="small muted">{t?.asset} · <RouteTag r={t?.route} /></div></div>
       </div>
       <div className="ts-row">
         {cell("Account", `${a.mode_label || "—"}${a.venue && a.venue !== "paper" ? ` · ${a.venue}` : ""}`)}
@@ -43,6 +43,11 @@ function TopStats({ t, symbol }) {
   );
 }
 
+export function RouteTag({ r }) {
+  if (!r) return null;
+  return <span className={`route-tag r-${r.kind}`} title={`${r.label}${r.auto ? " · auto-trade ON" : ""}`}>{r.auto && r.kind !== "watch" ? "⚡" : ""}{r.short}</span>;
+}
+
 function Watchlist({ items, symbol, onPick, onFav }) {
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
@@ -57,7 +62,7 @@ function Watchlist({ items, symbol, onPick, onFav }) {
         {rows.map((w) => (
           <div key={w.symbol} className={`wl-row ${w.symbol === symbol ? "on" : ""}`} onClick={() => onPick(w.symbol)}>
             <div className="wl-l">
-              <b>{w.symbol}</b>
+              <b>{w.symbol}</b> <RouteTag r={w.route} />
               <span className="mono small muted">{w.bid != null ? Number(w.bid).toFixed(w.digits) : "—"}</span>
             </div>
             <div className="wl-r">
@@ -228,6 +233,12 @@ function OrderPanel({ symbol, t, quote, onPlaced }) {
   return (
     <div className="tcard order-panel">
       <div className="tc-title row between"><span>New order</span><span className="chip info">{symbol}</span></div>
+      {t?.route && (
+        <div className={`route-banner r-${t.route.kind}`}>
+          <div>Orders go to: <b>{t.route.label}</b></div>
+          <div className="tiny">Auto-trade on this account: <b>{t.route.auto ? "ON ⚡ — qualified setups are placed by the app" : "OFF — setups wait for your approval"}</b> · <a href="#/lab">change</a></div>
+        </div>
+      )}
       <div className="bs">
         <button className={`bs-buy ${side === "BUY" ? "on" : ""}`} onClick={() => setSide("BUY")}>⊕ Buy<small>{quote ? Number(quote.ask).toFixed(digits) : ""}</small></button>
         <button className={`bs-sell ${side === "SELL" ? "on" : ""}`} disabled={crypto} title={crypto ? "Spot crypto: you can only buy, then sell what you own" : ""} onClick={() => setSide("SELL")}>⊖ Sell<small>{quote ? Number(quote.bid).toFixed(digits) : ""}</small></button>

@@ -223,3 +223,32 @@ def security_checklist(user: User = Depends(require("system.settings")), db: Ses
     out = [{"key": k, "label": lab, "ok": bool(okv), "detail": det, "link": link} for k, lab, okv, det, link in items]
     return {"items": out, "score": sum(i["ok"] for i in out), "total": len(out),
             "server_check": "On the server run: sudo /opt/trading_app/deploy/security-check.sh (read-only) and send the output for review."}
+
+
+# ------------------------------------------------------------------ news automation
+@router.get("/news-auto")
+def get_news_auto(user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
+    from ..services import news_trading
+    tags = sorted((state.get(db, "news_ai") or {}).values(), key=lambda t: -t["t"])[:15]
+    ai = state.get(db, "ai")
+    return {**news_trading.cfg(db), "ai_ready": bool(ai.get("enabled") and ai.get("api_key_enc")), "tags": tags}
+
+
+class NewsAutoIn(BaseModel):
+    breakout: bool | None = None
+    ai_filter: bool | None = None
+    min_confidence: float | None = Field(default=None, ge=0.5, le=0.95)
+    window_min: int | None = Field(default=None, ge=30, le=240)
+
+
+@router.put("/news-auto")
+def put_news_auto(body: NewsAutoIn, request: Request, user: User = Depends(require("trading.control")), db: Session = Depends(get_db)):
+    c = state.get_locked(db, "news_auto")
+    for k, v in body.model_dump(exclude_none=True).items():
+        c[k] = v
+    if c.get("ai_filter") and not state.get(db, "ai").get("enabled"):
+        raise HTTPException(400, "Turn on the AI assistant first (AI Assistant page)")
+    state.put(db, "news_auto", c, by=user.username)
+    audit(db, "news_auto.updated", user=user, ip=client_ip(request), details=body.model_dump(exclude_none=True))
+    db.commit()
+    return get_news_auto(user, db)

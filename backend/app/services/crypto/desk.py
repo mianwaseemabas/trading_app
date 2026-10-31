@@ -404,8 +404,7 @@ def monitor(db: Session, http=None) -> None:
 
 # --------------------------------------------------------------------- signals
 def evaluate_signals(db: Session) -> None:
-    from .. import strategy as strat
-    from ..indicators import required_history
+    from .. import news_trading
     c = cfg(db)
     mode = pos_mode(db)
     if not c.get("signals", True):
@@ -413,52 +412,65 @@ def evaluate_signals(db: Session) -> None:
     scfg = {**state.get(db, "strategy")}
     if c.get("strategy"):
         scfg["name"] = c["strategy"]
+    tfs = c.get("signal_timeframes", ["H1"])
+    news_on = news_trading.cfg(db).get("breakout")
+    ntf = news_trading.news_timeframe(tfs) or news_trading.news_timeframe(c.get("timeframes", []))
     for sym in c["symbols"]:
-        for tf in c.get("signal_timeframes", ["H1"]):
-            df = md.load_candles(db, sym, tf, limit=required_history(scfg) + 50)
-            if len(df) < required_history(scfg) // 2:
-                continue
-            last = df.index[-1].to_pydatetime()
-            if not md.is_closed(last, tf):
-                df = df.iloc[:-1]
-                last = df.index[-1].to_pydatetime()
-            if (utcnow() - (last + md.tf_delta(tf))).total_seconds() > md.TF_SECONDS[tf]:
-                continue
-            if db.scalar(select(Signal.id).where(Signal.symbol == sym, Signal.timeframe == tf, Signal.candle_time == last,
-                                                 Signal.strategy_version == scfg["version"])):
-                continue
-            ind = strat.prepare(df, scfg)
-            res = strat.evaluate(ind, len(ind) - 1, scfg)
-            sig = Signal(symbol=sym, timeframe=tf, candle_time=last, strategy=scfg["name"], strategy_version=scfg["version"],
-                         action=res.action, entry_ref=res.entry_ref, stop_loss=res.stop_loss, take_profit=res.take_profit,
-                         features={**res.features, "asset": "crypto"}, reasons=res.reasons, status="NO_TRADE",
-                         trading_mode=mode or "CRYPTO_OFF")
-            db.add(sig)
-            db.flush()
-            if res.action == "NONE":
-                continue
-            if res.action == "SELL" or mode is None:
-                sig.status = "SIGNAL_ONLY"
-                sig.reasons = list(sig.reasons) + [{"check": "spot account cannot sell short" if res.action == "SELL" else "crypto trading OFF",
-                                                    "passed": False}]
-                continue
-            from .. import assess
-            ctx = build_context(db, sym, "BUY", res.stop_loss, res.take_profit, mode)
-            d = evaluate(ctx)
-            sig.risk_checks = d.checks
-            outcome, _a = assess.route(db, sig, d, ctx)
-            if outcome != "QUALIFIED":
-                continue
-            controls = state.get(db, "controls")
-            from ..automation import announce, auto_ok
-            if auto_ok(db, mode, _a):
-                p, _checks, _ = place(db, symbol=sym, sl=sig.stop_loss, tp=sig.take_profit, by="auto", source=sig.strategy, signal=sig)
-                if p is not None:
-                    sig.status = "ORDERED"
-                    assess.lifecycle(db, sig.id, "AUTO_ORDERED", f"{mode} · no approval (auto-trade on)")
-                    announce(db, sig, p.volume, p.open_price, mode)
-                    continue
-            assess.request_approval(db, sig, d, int(controls.get("approval_minutes", 60)))
+        for tf in tfs:
+            _evaluate_one(db, sym, tf, scfg, mode)
+        if news_on and ntf:
+            ncfg = news_trading.strategy_cfg(db, scfg, sym, ntf, crypto=True)
+            if ncfg["news_events"]:
+                _evaluate_one(db, sym, ntf, ncfg, mode)
+
+
+def _evaluate_one(db: Session, sym: str, tf: str, scfg: dict, mode: str | None) -> None:
+    from .. import strategy as strat
+    from ..indicators import required_history
+    df = md.load_candles(db, sym, tf, limit=required_history(scfg) + 50)
+    if len(df) < required_history(scfg) // 2:
+        return
+    last = df.index[-1].to_pydatetime()
+    if not md.is_closed(last, tf):
+        df = df.iloc[:-1]
+        last = df.index[-1].to_pydatetime()
+    if (utcnow() - (last + md.tf_delta(tf))).total_seconds() > md.TF_SECONDS[tf]:
+        return
+    if db.scalar(select(Signal.id).where(Signal.symbol == sym, Signal.timeframe == tf, Signal.candle_time == last,
+                                         Signal.strategy_version == scfg["version"])):
+        return
+    ind = strat.prepare(df, scfg)
+    res = strat.evaluate(ind, len(ind) - 1, scfg)
+    sig = Signal(symbol=sym, timeframe=tf, candle_time=last, strategy=scfg["name"], strategy_version=scfg["version"],
+                 action=res.action, entry_ref=res.entry_ref, stop_loss=res.stop_loss, take_profit=res.take_profit,
+                 features={**res.features, "asset": "crypto"}, reasons=res.reasons, status="NO_TRADE",
+                 trading_mode=mode or "CRYPTO_OFF")
+    db.add(sig)
+    db.flush()
+    if res.action == "NONE":
+        return
+    if res.action == "SELL" or mode is None:
+        sig.status = "SIGNAL_ONLY"
+        sig.reasons = list(sig.reasons) + [{"check": "spot account cannot sell short" if res.action == "SELL" else "crypto trading OFF",
+                                            "passed": False}]
+        return
+    from .. import assess
+    ctx = build_context(db, sym, "BUY", res.stop_loss, res.take_profit, mode)
+    d = evaluate(ctx)
+    sig.risk_checks = d.checks
+    outcome, _a = assess.route(db, sig, d, ctx)
+    if outcome != "QUALIFIED":
+        return
+    controls = state.get(db, "controls")
+    from ..automation import announce, auto_ok
+    if auto_ok(db, mode, _a):
+        p, _checks, _ = place(db, symbol=sym, sl=sig.stop_loss, tp=sig.take_profit, by="auto", source=sig.strategy, signal=sig)
+        if p is not None:
+            sig.status = "ORDERED"
+            assess.lifecycle(db, sig.id, "AUTO_ORDERED", f"{mode} · no approval (auto-trade on)")
+            announce(db, sig, p.volume, p.open_price, mode)
+            return
+    assess.request_approval(db, sig, d, int(controls.get("approval_minutes", 60)))
 
 
 def tick(db: Session) -> None:

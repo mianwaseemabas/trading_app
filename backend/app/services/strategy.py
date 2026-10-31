@@ -71,6 +71,10 @@ def prepare(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
 def evaluate(df: pd.DataFrame, i: int, cfg: dict) -> StrategyResult:
     """Evaluate the configured strategy on row i of a DataFrame returned by prepare()."""
+    if cfg.get("name") == "news_breakout":
+        from . import news_trading
+        a, e, sl, tp, feats, reasons = news_trading.evaluate(df, i, cfg)
+        return StrategyResult(a, e, sl, tp, feats, reasons)
     if cfg.get("name") == "smc_sweep_bos":
         return _smc_evaluate(df, i, cfg)
     if cfg.get("name") in EXTRA:

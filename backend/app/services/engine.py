@@ -157,11 +157,12 @@ def every(name: str, seconds: float) -> bool:
 
 def research_jobs(db: Session) -> None:
     """Data incidents, SMC event log, shadow outcomes, scheduled alerts and alert delivery (fail-safe)."""
-    from . import ai_jobs, alerts, assess, chart, drawings, headlines, health, quality, race, tadawul
+    from . import ai_jobs, alerts, assess, chart, drawings, headlines, health, news_trading, quality, race, tadawul
     jobs = [("incidents", 30, quality.track_incidents), ("smc_log", 120, log_all_smc), ("outcomes", 60, assess.track_outcomes),
             ("scheduled", 60, alerts.scheduled), ("headlines", 60, headlines.refresh), ("reconcile", 300, reconcile_paper), ("deliver", 5, alerts.deliver_pending),
             ("ticks", 600, chart.prune_ticks), ("ai_jobs", 60, ai_jobs.scheduled), ("health", 60, health.monitor),
-            ("heartbeat", 20, health.heartbeat), ("race", 60, race.run), ("drawings", 10, drawings.check), ("tadawul", 60, tadawul.refresh)]
+            ("heartbeat", 20, health.heartbeat), ("race", 60, race.run), ("drawings", 10, drawings.check), ("tadawul", 60, tadawul.refresh),
+            ("news_ai", 180, news_trading.classify)]
     for name, sec, fn in jobs:
         if not every(name, sec):
             continue
@@ -264,6 +265,9 @@ def tick(db: Session) -> None:
 
     if mode == "OFF":
         return
+    from . import news_trading
+    news_on = news_trading.cfg(db).get("breakout")
+    ntf = news_trading.news_timeframe([t for t in cfg["timeframes"] if t in cfg.get("trade_timeframes", cfg["timeframes"])])
     for symbol in cfg["symbols"]:
         md.ensure_instrument(db, symbol)
         for tf in cfg["timeframes"]:
@@ -273,6 +277,15 @@ def tick(db: Session) -> None:
             except Exception as e:  # fail closed for this symbol, keep the engine alive
                 db.rollback()
                 log.exception("evaluate %s %s failed", symbol, tf)
+        if news_on and ntf:
+            try:
+                ncfg = news_trading.strategy_cfg(db, cfg, symbol, ntf)
+                if ncfg["news_events"]:
+                    evaluate_symbol(db, symbol, ntf, ncfg, mode)
+                    db.commit()
+            except Exception:
+                db.rollback()
+                log.exception("news breakout %s failed", symbol)
                 event(db, "engine", f"Evaluation failed for {symbol} {tf}: {e}", "ERROR")
                 db.commit()
 

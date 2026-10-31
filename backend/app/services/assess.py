@@ -224,6 +224,13 @@ def assess(db: Session, sig: Signal, *, d=None, ctx=None, save: bool = True) -> 
     if controls.get("news_filter"):
         ns = state.get(db, "news_status")
         gate("economic calendar loaded", bool(ns.get("ok")), ns.get("error") or ns.get("last_fetch", ""))
+    try:
+        from .news_trading import bias
+        nb = bias(db, sig.symbol, sig.action)
+    except Exception:  # noqa: BLE001
+        nb = None
+    if nb:
+        gate("recent high-impact news does not point against the trade (AI-tagged)", not nb["opposing"], nb["detail"])
     failed_risk = [c for c in (d.checks if d else []) if not c["passed"]]
     gate("risk engine (size, limits, exposure, kill switch)", not failed_risk, "; ".join(f"{c['check']} ({c.get('detail', '')})" for c in failed_risk[:4]))
     stats = comparable(db, sig.strategy, sig.symbol)

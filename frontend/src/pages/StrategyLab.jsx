@@ -5,12 +5,46 @@ import { Badge, Card, Field, PasswordPrompt, Switch, fmt, useAction, useApi } fr
 
 const MODE_INFO = {
   PAPER: ["Practice (forex paper)", "Fake money inside the app."],
-  MT5_DEMO: ["Broker demo (MT5)", "Your broker's demo account — fake money, real platform."],
-  MT5_LIVE: ["Broker LIVE (MT5)", "REAL MONEY. Needs the approved live gate + your password."],
+  MT5_DEMO: ["Broker demo (Capital.com / cTrader / MT5)", "Your forex broker's demo account — fake money, real broker."],
+  MT5_LIVE: ["Broker LIVE (forex)", "REAL MONEY. Needs the approved live gate + your password."],
   CRYPTO_PAPER: ["Crypto practice", "Fake USDT inside the app, real exchange prices."],
   CRYPTO_TEST: ["Crypto testnet", "Exchange test account — fake money, real exchange."],
   CRYPTO_LIVE: ["Crypto LIVE", "REAL MONEY. Needs the approved live gate + your password."],
 };
+
+function NewsAutomation() {
+  const { can } = useAuth();
+  const { data, reload } = useApi("/news-auto", { interval: 120000 });
+  const [run, busy] = useAction();
+  if (!data) return null;
+  const edit = can("trading.control");
+  const put = (b, m) => run(() => api.put("/news-auto", b), m).then(reload).catch(() => {});
+  return (
+    <div className="news-auto">
+      <h4>News automation</h4>
+      <div className="grid two">
+        <div className="helper-box">
+          <Switch on={data.breakout} disabled={!edit || busy} label="Trade the reaction after big news (news breakout)"
+            onChange={(v) => put({ breakout: v }, v ? "News breakout ON" : "News breakout OFF")} />
+          <div className="tiny muted">After a HIGH-impact release (CPI, jobs, central banks) or headline for a market, the app waits until the first spike is over,
+            marks the spike's high and low, and only trades a clean candle close beyond it within {data.window_min} min. Stop at the other side, target 1.5R.
+            It never guesses the news result. Placed automatically only where auto-trade is on (above); the risk engine checks every order.</div>
+        </div>
+        <div className="helper-box">
+          <Switch on={data.ai_filter} disabled={!edit || busy || !data.ai_ready} label="AI news filter (Claude reads headlines)"
+            onChange={(v) => put({ ai_filter: v }, v ? "AI news filter ON" : "AI news filter OFF")} />
+          <div className="tiny muted">Claude tags each high-impact headline about your markets as bullish / bearish per currency or coin. A setup that strong recent news
+            contradicts is rejected; agreeing news is noted. The AI can only block a trade — it never places one.{!data.ai_ready && " Turn on the AI assistant first."}</div>
+          {data.tags.length > 0 && <details className="small"><summary>Latest AI tags ({data.tags.length})</summary>
+            {data.tags.map((t, i) => <div key={i} className="tiny" style={{ margin: "4px 0" }}>
+              {Object.entries(t.effects).map(([k, v]) => <span key={k} className={v === "bullish" ? "pos" : v === "bearish" ? "neg" : "muted"}>{k} {v} </span>)}
+              <span className="muted">· {Math.round(t.confidence * 100)}% · {t.title}</span></div>)}
+          </details>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AutomationCard() {
   const { can } = useAuth();
@@ -27,7 +61,7 @@ export function AutomationCard() {
   return (
     <Card title="Auto-trade (place qualified trades without asking me)">
       <p className="small muted">
-        When a setup reaches <b>QUALIFIED</b>, has score ≥ <b>{data.min_score}</b> and verdict ≥ <b>{data.min_verdict.replace("_", " ")}</b>,
+        Auto-trade works on <b>strategy signals</b> (and on <b>news breakouts</b> if switched on below). When a setup reaches <b>QUALIFIED</b>, has score ≥ <b>{data.min_score}</b> and verdict ≥ <b>{data.min_verdict.replace("_", " ")}</b>,
         the app places it by itself in the switched-on accounts and sends you an <b>AUTO TRADE</b> alert (Telegram + email).
         The risk engine still checks every order: size, daily loss limit, max trades, news filter, kill switch.
         Switched off = the setup waits for you on <a href="#/setups">Setups to approve</a>.
@@ -59,6 +93,7 @@ export function AutomationCard() {
           </Field>
         </div>
       )}
+      <NewsAutomation />
       {ask && (
         <PasswordPrompt title="Turn on REAL-MONEY auto-trading?" onClose={() => setAsk(null)}
           message="The app will place real orders without asking you, within your risk limits. You can switch it off any time; the kill switch stops everything."

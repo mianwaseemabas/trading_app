@@ -122,6 +122,8 @@ DEFAULTS: dict[str, Any] = {
     "migrations": [],
     "race": {"enabled": True, "timeframes": ["H1"], "last": {}},
     "tadawul": {"symbols": ["^TASI.SR", "2222.SR", "1120.SR"], "status": {}},
+    "news_auto": {"breakout": False, "ai_filter": False, "wait_min": 15, "window_min": 120, "min_confidence": 0.7},
+    "news_ai": {},
     "headline_status": {"at": "", "feeds": {}},
     "strategy_lab": {"status": "NEVER_RUN", "results": [], "skipped": []},
     "alert_prefs": {"channels": {"telegram": ["SIGNAL_QUALIFIED", "AUTO_TRADE", "MARKET_NEWS", "ORDER_FILLED", "APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED",

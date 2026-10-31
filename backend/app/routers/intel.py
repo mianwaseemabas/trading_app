@@ -53,7 +53,7 @@ def terminal(symbol: str = "EURUSD", user: User = Depends(require("market.view")
     best = max(movers, key=lambda w: w["change_24h"]) if movers else None
     worst = min(movers, key=lambda w: w["change_24h"]) if movers else None
     return {
-        "symbol": symbol, "venue": venue, "asset": next((w["asset"] for w in wl if w["symbol"] == symbol), "forex"),
+        "symbol": symbol, "venue": venue, "route": intel.route_for(db, symbol), "asset": next((w["asset"] for w in wl if w["symbol"] == symbol), "forex"),
         "digits": intel.digits_of(db, symbol),
         "account": intel.account_bar(db, "crypto" if venue == "crypto" else "broker"),
         "highlights": {"best": best, "worst": worst},
