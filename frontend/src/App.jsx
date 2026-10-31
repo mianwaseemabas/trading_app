@@ -23,12 +23,15 @@ import Terminal from "./pages/Terminal.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import StrategyLab from "./pages/StrategyLab.jsx";
 import Academy from "./pages/Academy.jsx";
+import Charts from "./pages/Charts.jsx";
+import Tools from "./pages/Tools.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
   { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true, sec: "Trade", tab: true },
+  { k: "charts", label: "Multi-chart", icon: "▦", perm: "market.view", el: Charts, sec: "Trade" },
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard, sec: "Trade" },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live, sec: "Trade", tab: true },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups, sec: "Trade" },
@@ -45,6 +48,7 @@ const ROUTES = [
   { k: "backtest", label: "Backtest", icon: "↺", perm: "backtest.run", el: Backtest, sec: "Strategy" },
   { k: "risk", label: "Risk & Strategy", icon: "⛨", perm: "dashboard.view", el: RiskStrategy, sec: "Strategy" },
   { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades, sec: "Strategy" },
+  { k: "tools", label: "Calculator & simulator", icon: "🧮", perm: "market.view", el: Tools, sec: "Strategy" },
   { k: "brokers", label: "Brokers", icon: "⇄", perm: "dashboard.view", el: Brokers, sec: "Setup" },
   { k: "settings", label: "System", icon: "⚙", perm: "system.settings", el: Settings, sec: "Setup" },
   { k: "users", label: "Users", icon: "☰", perm: "users.manage", el: Users, sec: "Setup" },

@@ -6,6 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import state
@@ -71,11 +72,26 @@ def candles(symbol: str, tf: str = "H1", limit: int = Query(120, ge=20, le=1000)
     df, source = chart.candles(db, symbol.upper(), tf, limit + 60)
     if df.empty:
         return {"candles": [], "source": source}
-    ind = add_indicators(df, {**cfg, "ema_fast": 20, "ema_slow": cfg["ema_fast"]}).tail(limit)
-    nan = lambda v: None if v != v else float(v)  # noqa: E731
-    return {"symbol": symbol.upper(), "tf": tf, "source": source, "seconds": chart.CHART_TFS[tf], "candles": [
-        {"time": int(t.timestamp()), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "ema20": nan(r.ema_fast),
-         "ema50": nan(r.ema_slow)} for t, r in ind.iterrows()]}
+    ind = add_indicators(df, {**cfg, "ema_fast": 20, "ema_slow": cfg["ema_fast"]})
+    mid = ind["close"].rolling(20).mean()
+    sd = ind["close"].rolling(20).std()
+    ind["bb_up"], ind["bb_lo"] = mid + 2 * sd, mid - 2 * sd
+    ind = ind.tail(limit)
+    nan = lambda v: None if v is None or v != v else float(v)  # noqa: E731
+    vol = "tick_volume" in ind
+    out = [{"time": int(t.timestamp()), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "ema20": nan(r.ema_fast),
+            "ema50": nan(r.ema_slow), "bb_up": nan(r.bb_up), "bb_lo": nan(r.bb_lo), "rsi": nan(r.rsi), "macd": nan(r.get("macd")),
+            "macd_signal": nan(r.get("macd_signal")), "macd_hist": nan(r.get("macd_hist")), "volume": nan(r.tick_volume) if vol else None}
+           for t, r in ind.iterrows()]
+    markers = []
+    if len(ind):
+        from ..models import Signal
+        t0 = ind.index[0].to_pydatetime()
+        for sg in db.scalars(select(Signal).where(Signal.symbol == symbol.upper(), Signal.timeframe == tf, Signal.action != "NONE",
+                                                  Signal.candle_time >= t0).order_by(Signal.candle_time).limit(300)).all():
+            markers.append({"time": int(sg.candle_time.timestamp()), "action": sg.action, "status": sg.status, "id": sg.id,
+                            "strategy": sg.strategy})
+    return {"symbol": symbol.upper(), "tf": tf, "source": source, "seconds": chart.CHART_TFS[tf], "candles": out, "markers": markers}
 
 
 _rate: dict = {}

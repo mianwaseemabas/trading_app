@@ -98,6 +98,53 @@ function Catalog({ data, onApply, canEdit }) {
   );
 }
 
+function Spark({ data }) {
+  if (!data || data.length < 2) return <span className="tiny muted">—</span>;
+  const W = 110, H = 28, lo = Math.min(0, ...data), hi = Math.max(0, ...data);
+  const X = (i) => (i / (data.length - 1)) * W, Y = (v) => H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 4);
+  return (
+    <svg width={W} height={H}><line x1="0" x2={W} y1={Y(0)} y2={Y(0)} stroke="var(--line2)" />
+      <path d={data.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join("")} fill="none" stroke={data[data.length - 1] >= 0 ? "var(--ok)" : "var(--bad)"} strokeWidth="1.5" /></svg>
+  );
+}
+
+function RaceCard() {
+  const { can } = useAuth();
+  const { data, reload } = useApi("/race", { interval: 60000 });
+  const [run, busy] = useAction();
+  const [tfs, setTfs] = useState(null);
+  if (!data) return null;
+  const cur = tfs || data.config.timeframes || ["H1"];
+  return (
+    <Card title="🏁 Strategy race — every strategy paper-trades side by side" actions={can("strategy.edit") && (
+      <div className="row gap wrap">
+        {["M15", "H1", "H4"].map((t) => <label key={t} className="check small"><input type="checkbox" checked={cur.includes(t)} onChange={() => setTfs(cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t])} /> {t}</label>)}
+        <button className="btn sm" disabled={busy || !cur.length} onClick={() => { if (window.confirm("Start a new race? Current race results are cleared.")) run(() => api.post("/race/reset", { timeframes: cur }), "New race started").then(reload); }}>Restart race</button>
+      </div>
+    )}>
+      <p className="small muted">On every closed {(data.config.timeframes || []).join(" / ")} candle, all strategies look at all your markets at the same time. Each signal becomes a virtual
+        1R trade (spread and fees included). Results are in <b>R</b> so markets compare fairly. Started {fmt.dt(data.config.started_at)}. Trust a strategy only after 30+ trades.</p>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>#</th><th>Strategy</th><th>Trades</th><th>Open</th><th>Win %</th><th>Total R</th><th>Avg R</th><th>Profit factor</th><th>Max DD (R)</th><th>Equity in R</th></tr></thead>
+          <tbody>{data.board.map((b, i) => (
+            <tr key={b.strategy}>
+              <td>{i + 1}</td><td><b className="small">{b.strategy}</b>{!b.reliable && b.trades > 0 && <div className="tiny muted">too few trades</div>}</td>
+              <td>{b.trades}</td><td>{b.open}</td><td>{b.win_rate_pct ?? "—"}</td>
+              <td className={b.total_r > 0 ? "pos" : b.total_r < 0 ? "neg" : ""}>{b.total_r > 0 ? "+" : ""}{b.total_r}</td>
+              <td>{b.avg_r ?? "—"}</td><td>{b.profit_factor ?? "—"}</td><td>{b.max_dd_r}</td><td><Spark data={b.curve} /></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      {data.recent.length > 0 && <details className="small" style={{ marginTop: 8 }}><summary>Latest race trades ({data.recent.length})</summary>
+        <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Time</th><th>Strategy</th><th>Market</th><th>Side</th><th>Status</th><th>R</th></tr></thead>
+          <tbody>{data.recent.map((t) => <tr key={t.id}><td>{fmt.dt(t.time)}</td><td>{t.strategy}</td><td>{t.symbol} {t.tf}</td><td className={t.side === "BUY" ? "pos" : "neg"}>{t.side}</td>
+            <td>{t.status}</td><td className={t.r > 0 ? "pos" : t.r < 0 ? "neg" : ""}>{t.r ?? "open"}</td></tr>)}</tbody></table></div></details>}
+    </Card>
+  );
+}
+
 export default function StrategyLab() {
   const { can } = useAuth();
   const { data, reload } = useApi("/lab", { interval: 5000 });
@@ -111,6 +158,7 @@ export default function StrategyLab() {
   return (
     <div className="stack">
       <AutomationCard />
+      <RaceCard />
       <Catalog data={data} onApply={apply} canEdit={can("strategy.edit")} />
       <Card title="Test every strategy on my markets (with costs)" actions={
         <button className="btn primary sm" disabled={busy || running}

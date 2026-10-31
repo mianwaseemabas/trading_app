@@ -576,3 +576,43 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     last_ok: Mapped[datetime | None] = mapped_column(TS, nullable=True)
     fails: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ChartDrawing(Base):
+    """A line drawn on a chart (horizontal or trend line), optionally with a one-time price alert."""
+
+    __tablename__ = "chart_drawings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(8))  # hline | trend
+    data: Mapped[dict] = mapped_column(JSON, default=dict)  # {price} or {t1, p1, t2, p2} (t = unix seconds)
+    color: Mapped[str] = mapped_column(String(16), default="#f2b443")
+    label: Mapped[str] = mapped_column(String(60), default="")
+    alert: Mapped[bool] = mapped_column(Boolean, default=False)
+    side_last: Mapped[str] = mapped_column(String(6), default="")
+    triggered_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+
+
+class RaceTrade(Base):
+    """Strategy race: every strategy paper-trades the same markets side by side, measured in R after spread."""
+
+    __tablename__ = "race_trades"
+    __table_args__ = (UniqueConstraint("strategy", "symbol", "timeframe", "candle_time", name="uq_race_trade"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    strategy: Mapped[str] = mapped_column(String(32), index=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    timeframe: Mapped[str] = mapped_column(String(4))
+    side: Mapped[str] = mapped_column(String(4))
+    candle_time: Mapped[datetime] = mapped_column(TS)
+    entry: Mapped[float] = mapped_column(Float)
+    stop_loss: Mapped[float] = mapped_column(Float)
+    take_profit: Mapped[float] = mapped_column(Float)
+    cost_r: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(8), default="OPEN", index=True)  # OPEN | WIN | LOSS | EXPIRED
+    exit_time: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    r: Mapped[float | None] = mapped_column(Float, nullable=True)

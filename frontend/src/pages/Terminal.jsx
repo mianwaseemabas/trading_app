@@ -2,11 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { ExplainChart } from "../components/Helpers.jsx";
-import ZoomChart from "../components/ZoomChart.jsx";
+import ChartPanel, { TFS, TF_SEC, useIndicators } from "../components/ChartPanel.jsx";
 import { Modal, fmt, pnlClass, useAction, useApi, useToast, useWidth } from "../components.jsx";
 
-const TFS = [["S5", "5s"], ["S15", "15s"], ["S30", "30s"], ["M1", "1m"], ["M5", "5m"], ["M15", "15m"], ["M30", "30m"], ["H1", "1H"], ["H4", "4H"], ["D1", "1D"]];
-const TF_SEC = { S5: 5, S15: 15, S30: 30, M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 };
 const ASSET_TABS = [["all", "All"], ["fav", "★"], ["forex", "Forex"], ["crypto", "Crypto"], ["other", "Stocks & more"]];
 const COIN = { BTC: "₿", ETH: "Ξ", SOL: "◎", XRP: "✕", BNB: "◆", DOGE: "Ð", ADA: "₳" };
 const toneCls = { ok: "t-ok", bad: "t-bad", warn: "t-warn", info: "t-info", muted: "t-muted" };
@@ -276,8 +274,8 @@ export default function Terminal() {
   const { data: t, reload: reloadT } = useApi(`/intel/terminal?symbol=${symbol}`, { interval: 10000, deps: [symbol] });
   const [tf, setTfRaw] = useState(() => { try { return localStorage.getItem("q.tf") || "H1"; } catch { return "H1"; } });
   const setTf = (v) => { setTfRaw(v); try { localStorage.setItem("q.tf", v); } catch { /* ignore */ } };
-  const refreshMs = TF_SEC[tf] < 60 ? 2000 : TF_SEC[tf] <= 300 ? 5000 : 30000;
-  const { data: cd } = useApi(`/intel/candles?symbol=${symbol}&tf=${tf}&limit=400`, { interval: refreshMs, deps: [symbol, tf] });
+  const [ind, toggleInd] = useIndicators();
+  const { data: cd } = useApi(`/intel/candles?symbol=${symbol}&tf=${tf}&limit=60`, { interval: 30000, deps: [symbol, tf] });
   const { data: live, reload: reloadLive } = useApi("/live/feed", { interval: 5000 });
   const { data: cf, reload: reloadCf } = useApi("/crypto/feed", { interval: 5000 });
   const { can } = useAuth();
@@ -329,9 +327,7 @@ export default function Terminal() {
                   <ExplainChart symbol={symbol} tf={tf} />
                   <div className="tf-row scroll-x">{TFS.map(([k, l]) => <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>)}</div>
                 </div>
-                <ZoomChart candles={cd?.candles || []} digits={digits} levels={levels} tfSec={TF_SEC[tf]} />
-                <div className="tiny muted">— EMA 20 &nbsp; <span style={{ color: "#a78bfa" }}>— EMA 50</span> · dashed = your open trade (entry / SL / TP)
-                  {cd?.source && <> · data: {cd.source}{TF_SEC[tf] < 60 && cd.source === "live price updates" ? " (built from the prices the app receives, every few seconds)" : ""}</>}</div>
+                <ChartPanel symbol={symbol} tf={tf} digits={digits} levels={levels} ind={ind} toggleInd={toggleInd} />
               </div>
               <div className="tcard">
                 <div className="tc-title">Open positions · {t?.account?.mode_label || ""}</div>

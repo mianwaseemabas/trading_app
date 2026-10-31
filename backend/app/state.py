@@ -119,6 +119,7 @@ DEFAULTS: dict[str, Any] = {
     "backup": {"offsite_telegram": False},
     "backup_status": {},
     "migrations": [],
+    "race": {"enabled": True, "timeframes": ["H1"], "last": {}},
     "headline_status": {"at": "", "feeds": {}},
     "strategy_lab": {"status": "NEVER_RUN", "results": [], "skipped": []},
     "alert_prefs": {"channels": {"telegram": ["SIGNAL_QUALIFIED", "AUTO_TRADE", "MARKET_NEWS", "ORDER_FILLED", "APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED",
