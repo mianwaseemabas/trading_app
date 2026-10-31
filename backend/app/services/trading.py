@@ -15,7 +15,7 @@ from ..config import settings
 from ..models import AccountSnapshot, Candle, Instrument, Order, Position, Quote, Signal, utcnow
 from . import market_data as md
 from .notifier import notify
-from .risk_engine import AccountState, InstrumentSpec, OpenPos, RiskContext, RiskDecision
+from .risk_engine import AccountState, InstrumentSpec, OpenPos, RiskContext, RiskDecision, floor_to_step
 from .risk_engine import evaluate as risk_evaluate
 
 PAPER_LEVERAGE = 100
@@ -207,8 +207,18 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
         select(Order).where(Order.mode == mode, Order.action == "OPEN", Order.status.in_(["PENDING", "SENT"]))
     ).all()
     positions += [OpenPos(o.symbol, o.side, 0) for o in pending]
+    controls = state.get(db, "controls")
+    from .news import news_check
+    extra = [("pair enabled for trading", symbol not in controls.get("disabled_symbols", []), symbol)]
+    if controls.get("session_filter"):
+        h, a, b = utcnow().hour, int(controls["session_start_utc"]), int(controls["session_end_utc"])
+        inside = a <= h < b if a < b else (h >= a or h < b)
+        extra.append(("inside trading hours", inside, f"{h:02d}:00 UTC, allowed {a:02d}:00–{b:02d}:00"))
+    news_ok, news_detail = news_check(db, symbol, controls)
+    extra.append(("no high-impact news window", news_ok, news_detail))
     return RiskContext(
         side=side,
+        extra_checks=extra,
         symbol=symbol,
         bid=q.bid if q else 0,
         ask=q.ask if q else 0,
@@ -282,9 +292,12 @@ def paper_fill(db: Session, o: Order) -> None:
     o.filled_volume = o.volume
     o.slippage_points = round(abs(price - o.requested_price) / inst.point, 1)
     o.sl_verified = True
-    db.add(Position(mode="PAPER", order_id=o.id, symbol=o.symbol, side=o.side, volume=o.volume,
-                    open_price=price, stop_loss=o.stop_loss, take_profit=o.take_profit, current_price=price,
-                    broker_ticket=f"P{o.id}"))
+    pos = Position(mode="PAPER", order_id=o.id, symbol=o.symbol, side=o.side, volume=o.volume,
+                   open_price=price, stop_loss=o.stop_loss, take_profit=o.take_profit, current_price=price,
+                   broker_ticket=f"P{o.id}")
+    db.add(pos)
+    db.flush()
+    attach_management(db, pos, management_for_order(db, o))
 
 
 def close_paper_position(db: Session, p: Position, price: float, reason: str) -> None:
@@ -383,3 +396,121 @@ def expire_orders(db: Session) -> None:
         rec = state.get(db, "reconciliation")
         rec.update(ok=False, detail=f"{len(stuck)} order(s) sent to bridge without result", at=now.isoformat())
         state.put(db, "reconciliation", rec)
+
+
+# ------------------------------------------------------------- pro features
+SIZING_MODES = ("risk_pct", "risk_amount", "lots", "auto")
+
+
+def apply_sizing(decision: RiskDecision, ctx: RiskContext, mode: str, value: float | None) -> None:
+    """Resize an evaluated decision according to the user's sizing choice.
+
+    The risk engine's volume is the MAXIMUM allowed by the risk policy; any choice is capped by it.
+      auto        - use the maximum allowed by the policy (risk per trade)
+      risk_pct    - risk this % of equity (<= policy)
+      risk_amount - risk this many account-currency units, e.g. $2 (<= policy budget)
+      lots        - fixed lots
+    """
+    if mode in (None, "", "auto") or value in (None, "") or decision.loss_per_lot <= 0:
+        return
+    spec = ctx.spec
+    if mode == "risk_pct":
+        target = float(value)
+        amount = ctx.account.equity * target / 100
+        vol = floor_to_step(amount / decision.loss_per_lot, spec.volume_step)
+        label = f"risk {target}% = {amount:.2f}"
+    elif mode == "risk_amount":
+        amount = float(value)
+        vol = floor_to_step(amount / decision.loss_per_lot, spec.volume_step)
+        label = f"risk amount {amount:.2f}"
+    elif mode == "lots":
+        vol = floor_to_step(float(value), spec.volume_step)
+        label = f"{vol} lots"
+    else:
+        raise ValueError("unknown sizing mode")
+    ok = spec.volume_min - 1e-12 <= vol <= decision.volume + 1e-12
+    detail = f"{label} -> {vol} lots (allowed {spec.volume_min}–{decision.volume} lots by your risk policy)"
+    decision.checks.append({"check": "chosen size within risk policy", "passed": ok, "detail": detail})
+    if ok:
+        decision.volume = vol
+        decision.risk_amount = round(vol * decision.loss_per_lot, 2)
+    decision.approved = decision.approved and ok
+
+
+def potential_outcomes(decision: RiskDecision, ctx: RiskContext) -> dict:
+    """Money at stake if SL / TP is hit (approximate, includes commission)."""
+    vpu = None
+    if ctx.spec.tick_value and ctx.spec.tick_size:
+        vpu = ctx.spec.tick_value / ctx.spec.tick_size
+    elif ctx.profit_to_account_rate:
+        vpu = ctx.spec.contract_size * ctx.profit_to_account_rate
+    if not vpu or not decision.volume:
+        return {}
+    comm = float(ctx.cfg.get("commission_per_lot", 0)) * decision.volume
+    loss = abs(decision.entry_price - (ctx.stop_loss or decision.entry_price)) * decision.volume * vpu + comm
+    gain = abs((ctx.take_profit or decision.entry_price) - decision.entry_price) * decision.volume * vpu - comm if ctx.take_profit else None
+    return {"loss_if_sl": round(loss, 2), "gain_if_tp": round(gain, 2) if gain is not None else None,
+            "reward_risk": round(gain / loss, 2) if gain and loss else None,
+            "pip_value": round(vpu * decision.volume * (0.01 if ctx.symbol.endswith("JPY") else 0.0001), 4)}
+
+
+def attach_management(db: Session, p: Position, management: dict | None) -> None:
+    from ..models import PositionMgmt
+    m = management or {}
+    controls = state.get(db, "controls")
+    be = m.get("breakeven_r", controls.get("default_breakeven_r"))
+    tr = m.get("trailing_atr", controls.get("default_trailing_atr"))
+    if (be or tr) and p.stop_loss and db.get(PositionMgmt, p.id) is None:
+        db.add(PositionMgmt(position_id=p.id, initial_sl=p.stop_loss, breakeven_r=be or None, trailing_atr=tr or None))
+
+
+def management_for_order(db: Session, o: Order) -> dict | None:
+    sig = db.get(Signal, o.signal_id) if o.signal_id else None
+    return (sig.features or {}).get("management") if sig else None
+
+
+def request_modify(db: Session, p: Position, new_sl: float | None, new_tp: float | None, by: str, reason: str,
+                   allow_widen: bool = False) -> Order | None:
+    """Change SL/TP of an open position. The stop-loss may only be tightened (never increase risk)."""
+    if p.status != "OPEN":
+        raise ValueError("position is not open")
+    sl = p.stop_loss if new_sl is None else new_sl
+    tp = p.take_profit if new_tp is None else (new_tp or None)
+    q = db.get(Quote, p.symbol)
+    px = (q.bid if p.side == "BUY" else q.ask) if q else (p.current_price or p.open_price)
+    if sl is None:
+        raise ValueError("a stop-loss is required")
+    if p.side == "BUY":
+        if sl >= px:
+            raise ValueError(f"stop-loss must be below the current price {px}")
+        if not allow_widen and p.stop_loss and sl < p.stop_loss - 1e-12:
+            raise ValueError("the stop-loss can only be moved closer (tightened), never further away")
+        if tp is not None and tp <= px:
+            raise ValueError(f"take-profit must be above the current price {px}")
+    else:
+        if sl <= px:
+            raise ValueError(f"stop-loss must be above the current price {px}")
+        if not allow_widen and p.stop_loss and sl > p.stop_loss + 1e-12:
+            raise ValueError("the stop-loss can only be moved closer (tightened), never further away")
+        if tp is not None and tp >= px:
+            raise ValueError(f"take-profit must be below the current price {px}")
+    if p.mode == "PAPER":
+        old = (p.stop_loss, p.take_profit)
+        p.stop_loss, p.take_profit = sl, tp
+        audit(db, "position.sl_tp_modified", user=by, entity="position", entity_id=p.id,
+              details={"from": old, "to": (sl, tp), "reason": reason, "mode": "PAPER"})
+        return None
+    pending = db.scalar(select(Order).where(Order.position_id == p.id, Order.action == "MODIFY",
+                                            Order.status.in_(["PENDING", "SENT"])))
+    if pending:
+        pending.status, pending.error = "CANCELLED", "superseded by a newer modification"
+    o = Order(client_id=f"M{p.id}-{int(utcnow().timestamp() * 1000)}", mode=p.mode, action="MODIFY",
+              position_ticket=p.broker_ticket, position_id=p.id, symbol=p.symbol, side=p.side, volume=p.volume,
+              requested_price=px, stop_loss=sl, take_profit=tp, max_slippage_points=0,
+              expires_at=utcnow() + timedelta(minutes=2))
+    db.add(o)
+    db.flush()
+    o.signature = sign_payload(order_payload(o))
+    audit(db, "order.modify_requested", user=by, entity="position", entity_id=p.id,
+          details={"sl": sl, "tp": tp, "reason": reason})
+    return o

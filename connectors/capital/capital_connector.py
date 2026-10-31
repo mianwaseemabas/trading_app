@@ -482,8 +482,10 @@ class Connector:
             return "order is for a DEMO account but the connector is on the LIVE environment"
         if o["mode"] == "MT5_LIVE" and (not Cfg.is_live or not Cfg.allow_real):
             return "live order refused (demo environment or real-money orders not allowed in Brokers settings)"
-        if o["volume"] <= 0 or o["volume"] > Cfg.max_volume:
+        if o["action"] == "OPEN" and (o["volume"] <= 0 or o["volume"] > Cfg.max_volume):
             return f"volume {o['volume']} outside connector limit {Cfg.max_volume} lots"
+        if o["action"] == "MODIFY" and not o.get("stop_loss"):
+            return "a modification must keep a stop-loss"
         if o["symbol"] not in self.markets:
             return f"market {o['symbol']} not available"
         if o["action"] == "OPEN" and not o.get("stop_loss"):
@@ -521,6 +523,26 @@ class Connector:
         if not m.tradeable:
             return self.report(cid, status="REJECTED", error="connector: market not tradeable now")
         spread_pts = (m.ask - m.bid) / m.point
+
+        if o["action"] == "MODIFY":
+            deal_id = str(o["position_ticket"])
+            sl = round(float(o["stop_loss"]), m.digits)
+            tp = round(float(o["take_profit"]), m.digits) if o.get("take_profit") else None
+            body = {"stopLevel": sl, **({"profitLevel": tp} if tp else {})}
+            ref = self.cap.call("PUT", f"/positions/{deal_id}", body).get("dealReference")
+            c = self.confirm(ref) if ref else {"dealStatus": "ACCEPTED"}
+            if c.get("dealStatus") != "ACCEPTED":
+                return self.report(cid, status="REJECTED", error=f"connector: modify {c.get('dealStatus')} {c.get('reason', '')}")
+            self.load_positions()
+            p = next((x["position"] for x in self.positions if x.get("position", {}).get("dealId") == deal_id), {})
+            seen = p.get("stopLevel")
+            ok = seen is not None and abs(float(seen) - sl) <= 2 * m.point
+            if deal_id in self.state["ours"]:
+                self.state["ours"][deal_id]["sl"] = sl
+                self._save_state()
+            return self.report(cid, status="FILLED", ticket=deal_id, price=float(seen or sl), volume=o["volume"], sl_verified=ok,
+                               sl=float(seen) if seen is not None else sl, tp=float(p.get("profitLevel") or tp or 0) or None,
+                               error="" if ok else "new stop-loss not confirmed in broker data")
 
         if o["action"] == "CLOSE":
             ref = self.cap.call("DELETE", f"/positions/{o['position_ticket']}").get("dealReference")

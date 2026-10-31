@@ -277,8 +277,10 @@ def validate(o: dict) -> str | None:
         return f"order is for a DEMO account but the terminal account trade_mode={acc.trade_mode}"
     if o["mode"] == "MT5_LIVE" and (acc.trade_mode != 2 or not ALLOW_REAL):
         return "live order refused (account is not real or ALLOW_REAL_ACCOUNT=false)"
-    if o["volume"] <= 0 or o["volume"] > MAX_VOLUME:
+    if o["action"] == "OPEN" and (o["volume"] <= 0 or o["volume"] > MAX_VOLUME):
         return f"volume {o['volume']} outside bridge limit {MAX_VOLUME}"
+    if o["action"] == "MODIFY" and not o.get("stop_loss"):
+        return "a modification must keep a stop-loss"
     if o["action"] == "OPEN":
         if not o.get("stop_loss"):
             return "missing stop-loss"
@@ -305,6 +307,18 @@ def execute(o: dict) -> None:
     if o["action"] == "OPEN" and spread_pts > MAX_SPREAD_POINTS:
         report(cid, status="REJECTED", error=f"bridge: spread {spread_pts:.0f} pts > {MAX_SPREAD_POINTS}")
         return
+    if o["action"] == "MODIFY":
+        ticket = int(o["position_ticket"])
+        sl = round(float(o["stop_loss"]), info.digits)
+        tp = round(float(o["take_profit"]), info.digits) if o.get("take_profit") else 0.0
+        res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": ticket, "symbol": b, "sl": sl, "tp": tp, "magic": MAGIC})
+        pos = (mt5.positions_get(ticket=ticket) or [None])[0]
+        ok = bool(pos and pos.sl and abs(pos.sl - sl) <= 2 * info.point)
+        report(cid, status="FILLED" if ok else "REJECTED", ticket=ticket, price=sl, volume=o["volume"], sl_verified=ok,
+               sl=pos.sl if pos else None, tp=(pos.tp or None) if pos else None, retcode=getattr(res, "retcode", None),
+               error="" if ok else f"bridge: modify failed {getattr(res, 'comment', mt5.last_error())}")
+        return
+
     buy = o["side"] == "BUY"
     price = tick.ask if buy else tick.bid
     req = {

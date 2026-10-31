@@ -92,6 +92,22 @@ class H(BaseHTTPRequestHandler):
         return self._send(404, {})
 
     def do_PUT(self):
+        u = urlparse(self.path)
+        m = re.match(r"/api/v1/positions/(.+)", u.path)
+        if m and self._auth():
+            b = self._body()
+            with LOCK:
+                p = STATE["positions"].get(m.group(1))
+                if p is None:
+                    return self._send(404, {"errorCode": "error.not-found.dealId"})
+                if "stopLevel" in b:
+                    p["position"]["stopLevel"] = b["stopLevel"]
+                if "profitLevel" in b:
+                    p["position"]["profitLevel"] = b["profitLevel"]
+                ref = "u_" + uuid.uuid4().hex[:8]
+                STATE["confirms"][ref] = {"dealStatus": "ACCEPTED", "status": "AMENDED", "dealId": m.group(1),
+                                          "affectedDeals": [{"dealId": m.group(1), "status": "AMENDED"}]}
+            return self._send(200, {"dealReference": ref})
         return self._send(200, {"status": "SUCCESS"})
 
     def do_GET(self):

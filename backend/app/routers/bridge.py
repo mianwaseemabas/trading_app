@@ -278,6 +278,14 @@ async def order_result(client_id: str, request: Request, auth=Depends(bridge_aut
         if inst and o.requested_price:
             o.slippage_points = round(abs(o.fill_price - o.requested_price) / inst.point, 1)
         o.sl_verified = bool(body.get("sl_verified", False))
+        if o.action == "MODIFY":
+            p = db.get(Position, o.position_id) if o.position_id else None
+            if p is not None:
+                old = (p.stop_loss, p.take_profit)
+                p.stop_loss = body.get("sl", o.stop_loss)
+                p.take_profit = body.get("tp", o.take_profit)
+                audit(db, "position.sl_tp_modified", entity="position", entity_id=p.id,
+                      details={"from": old, "to": (p.stop_loss, p.take_profit), "mode": o.mode})
         if o.action == "OPEN":
             db.add(Position(
                 mode=o.mode, order_id=o.id, broker_ticket=str(body.get("position_ticket") or o.broker_ticket),
@@ -285,6 +293,11 @@ async def order_result(client_id: str, request: Request, auth=Depends(bridge_aut
                 stop_loss=body.get("sl", o.stop_loss), take_profit=body.get("tp", o.take_profit),
                 current_price=o.fill_price,
             ))
+            db.flush()
+            new_pos = db.scalar(select(Position).where(Position.order_id == o.id))
+            if new_pos is not None:
+                from ..services.trading import attach_management, management_for_order
+                attach_management(db, new_pos, management_for_order(db, o))
             if not o.sl_verified:
                 tr = state.get_locked(db, "trading")
                 tr.update(locked=True, lock_reason=f"Stop-loss not verified at broker for {client_id}")

@@ -190,3 +190,20 @@ def test_manual_positions_reported_as_external(conn):
     conn.load_positions()
     ext = conn.external_payload()
     assert [e["ticket"] for e in ext] == ["manual1"] and conn.positions_payload() == []
+
+
+def test_modify_moves_stop_and_verifies(conn):
+    conn.execute(order())
+    deal = conn.reports[-1][1]["ticket"]
+    conn.execute(order(client_id="M1-1", action="MODIFY", stop_loss=1.0795, take_profit=1.0850, position_ticket=deal))
+    cid, r = conn.reports[-1]
+    assert cid == "M1-1" and r["status"] == "FILLED" and r["sl_verified"]
+    assert r["sl"] == pytest.approx(1.0795) and r["tp"] == pytest.approx(1.085)
+    assert mock.STATE["positions"][deal]["position"]["stopLevel"] == pytest.approx(1.0795)
+
+
+def test_modify_requires_stop(conn):
+    conn.execute(order())
+    deal = conn.reports[-1][1]["ticket"]
+    conn.execute(order(client_id="M2-1", action="MODIFY", stop_loss=None, position_ticket=deal))
+    assert conn.reports[-1][1]["status"] == "REJECTED" and "stop-loss" in conn.reports[-1][1]["error"]

@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
-import { Badge, Card, Field, Meter, Modal, PasswordPrompt, Stat, Table, digitsFor, fmt, modeTone, pnlClass, statusTone, useAction, useApi } from "../components.jsx";
+import { Badge, Card, Field, Meter, Modal, PasswordPrompt, Stat, Table, countdown, digitsFor, fmt, modeLabel, modeTone, pnlClass, statusTone, useAction, useApi } from "../components.jsx";
 
 const MODES = [
-  { k: "OFF", d: "Engine idle. No signals, no orders." },
-  { k: "SIGNALS_ONLY", d: "Generate and log signals only." },
-  { k: "PAPER", d: "Simulated execution against live quotes (internal paper account)." },
-  { k: "MT5_DEMO", label: "BROKER DEMO", d: "Real orders on the broker DEMO account (cTrader connector or MT5 bridge)." },
+  { k: "OFF", d: "Nothing runs. No signals, no orders." },
+  { k: "SIGNALS_ONLY", label: "SIGNALS ONLY", d: "The strategy shows BUY/SELL ideas, but never trades." },
+  { k: "PAPER", label: "PRACTICE (PAPER)", d: "Start here: virtual $500 account, real market prices, no broker, no risk. Place trades from Live trading." },
+  { k: "MT5_DEMO", label: "BROKER DEMO", d: "Orders go to your broker's demo account (Capital.com demo) — practice money, real broker." },
   { k: "MT5_LIVE", label: "BROKER LIVE", d: "Real money. Requires approved live gate." },
 ];
 
@@ -20,7 +20,7 @@ function ModeSwitcher({ status, reload }) {
   const choose = (m) => {
     if (m === cur) return;
     if (m.startsWith("MT5")) setTarget(m);
-    else run(() => api.post("/system/mode", { mode: m }), `Mode set to ${m}`).then(reload).catch(() => {});
+    else run(() => api.post("/system/mode", { mode: m }), `Mode set to ${modeLabel(m)}`).then(reload).catch(() => {});
   };
   return (
     <>
@@ -34,13 +34,13 @@ function ModeSwitcher({ status, reload }) {
       </div>
       {target && (
         <PasswordPrompt
-          title={`Switch to ${target}`}
+          title={`Switch to ${modeLabel(target)}`}
           message={target === "MT5_LIVE" ? "This enables automated trading with real money. Losses can exceed expectations." : "Orders will be sent to your broker demo account through the connector."}
           extra={target === "MT5_LIVE" && (
             <Field label='Type "ENABLE LIVE TRADING"'><input value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
           )}
           onClose={() => { setTarget(null); setConfirm(""); }}
-          onSubmit={(password) => run(() => api.post("/system/mode", { mode: target, password, confirm }), `Mode set to ${target}`).then(reload)}
+          onSubmit={(password) => run(() => api.post("/system/mode", { mode: target, password, confirm }), `Mode set to ${modeLabel(target)}`).then(reload)}
         />
       )}
     </>
@@ -108,6 +108,7 @@ export default function Dashboard() {
   const { data: positions, reload: reloadPos } = useApi(can("trades.view") ? "/positions?status=OPEN" : null, { interval: 5000 });
   const { data: signals } = useApi(can("signals.view") ? "/signals?actionable=true&limit=8" : null, { interval: 15000 });
   const { data: quotes } = useApi(can("market.view") ? "/market/quotes" : null, { interval: 5000 });
+  const { data: news } = useApi(can("market.view") ? "/news?days_back=0&days_ahead=3&impact=High" : null, { interval: 60000 });
   const [run] = useAction();
   if (error) return <div className="alert bad">{error}</div>;
   if (!s) return <div className="muted">Loading…</div>;
@@ -121,7 +122,7 @@ export default function Dashboard() {
       {s.trading.kill_switch && <div className="alert bad"><strong>Kill switch engaged.</strong> {s.trading.kill_switch_reason}</div>}
 
       <div className="grid stats">
-        <Stat label={`Equity (${s.account_mode})`} value={fmt.money(a?.equity, ccy)} sub={`Balance ${fmt.money(a?.balance)}`} />
+        <Stat label={`Equity · ${modeLabel(s.account_mode)}`} value={fmt.money(a?.equity, ccy)} sub={`Balance ${fmt.money(a?.balance)}`} />
         <Stat label="Free margin" value={fmt.money(a?.free_margin)} sub={`Margin ${fmt.money(s.account_meta?.margin)}`} />
         <Stat label="Realized today" value={<span className={pnlClass(s.realized_today)}>{fmt.money(s.realized_today)}</span>} sub="net of costs" />
         <Stat label="Unrealized" value={<span className={pnlClass(s.unrealized)}>{fmt.money(s.unrealized)}</span>} sub={`${s.open_positions} open position(s) · not profit until closed`} />
@@ -144,10 +145,19 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {news && (
+        <Card title="Next high-impact news" actions={<a href="#/news" className="small">Calendar →</a>}>
+          {news.events.filter((e) => new Date(e.time).getTime() > Date.now() - 15 * 60000).length === 0
+            ? <p className="muted small">{news.status.ok ? "No high-impact news in the next 3 days." : "News calendar not loaded yet."}</p>
+            : <ul className="feed small">{news.events.filter((e) => new Date(e.time).getTime() > Date.now() - 15 * 60000).slice(0, 5).map((e, i) => (
+              <li key={i}><Badge tone="bad">High</Badge><b>{e.currency}</b><span>{e.title}</span><span className="muted">{fmt.dt(e.time)} · {countdown(e.time)}</span></li>))}</ul>}
+        </Card>
+      )}
+
       {can("trades.view") && (
         <Card title="Open positions">
           <Table rows={positions} empty="No open positions" cols={[
-            { label: "Mode", render: (p) => <Badge tone={modeTone(p.mode)}>{p.mode}</Badge> },
+            { label: "Mode", render: (p) => <Badge tone={modeTone(p.mode)}>{modeLabel(p.mode)}</Badge> },
             { label: "Symbol", k: "symbol" },
             { label: "Side", render: (p) => <Badge tone={statusTone(p.side)}>{p.side}</Badge> },
             { label: "Volume", k: "volume", num: true },

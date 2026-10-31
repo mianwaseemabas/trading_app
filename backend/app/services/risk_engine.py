@@ -70,6 +70,7 @@ class RiskContext:
     profit_to_account_rate: float | None = None  # 1 unit of profit ccy in account ccy
     base_to_account_rate: float | None = None  # 1 unit of base ccy in account ccy
     duplicate: bool = False
+    extra_checks: list = field(default_factory=list)  # (name, passed, detail) from trading controls / news
 
 
 @dataclass
@@ -117,6 +118,8 @@ def evaluate(ctx: RiskContext) -> RiskDecision:
     spread_points = (ctx.ask - ctx.bid) / ctx.spec.point if ctx.spec.point else float("inf")
 
     check("kill switch released", not ctx.kill_switch)
+    for name, passed, detail in ctx.extra_checks:
+        check(name, passed, detail)
     check("no loss-limit lock", not ctx.locked, ctx.lock_reason)
     check("trading mode allows orders", ctx.mode in {"PAPER", "MT5_DEMO", "MT5_LIVE"}, ctx.mode)
     check("forbidden techniques disabled",

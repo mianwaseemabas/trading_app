@@ -80,3 +80,10 @@ def test_int64_strings_and_enum_names():
     assert cc.i("123") == 123 and cc.i(None, 5) == 5
     assert cc.enum_is("ORDER_FILLED", "ORDER_FILLED", 3) and cc.enum_is(3, "ORDER_FILLED", 3)
     assert cc.enum_is("3", "ORDER_FILLED", 3) and not cc.enum_is("ORDER_ACCEPTED", "ORDER_FILLED", 3)
+
+
+def test_validate_modify():
+    c = connector()
+    c._positions = [{"tradeData": {"comment": "S1-MT5_DEMO"}}]
+    assert c.validate(order(client_id="M5-1", action="MODIFY", position_ticket=42, volume=50.0)) is None
+    assert "stop-loss" in c.validate(order(client_id="M5-2", action="MODIFY", position_ticket=42, stop_loss=None))

@@ -589,8 +589,10 @@ class Connector:
             return "order is for a DEMO account but the connected cTrader account is LIVE"
         if o["mode"] == "MT5_LIVE" and (not self.st.is_live or not Cfg.allow_real):
             return "live order refused (account is demo or real-money orders not allowed in Brokers settings)"
-        if o["volume"] <= 0 or o["volume"] > Cfg.max_volume:
+        if o["action"] == "OPEN" and (o["volume"] <= 0 or o["volume"] > Cfg.max_volume):
             return f"volume {o['volume']} outside connector limit {Cfg.max_volume}"
+        if o["action"] == "MODIFY" and not o.get("stop_loss"):
+            return "a modification must keep a stop-loss"
         if o["symbol"] not in self.st.symbols:
             return f"symbol {o['symbol']} not available"
         if o["action"] == "OPEN":
@@ -641,6 +643,25 @@ class Connector:
         if o["action"] == "OPEN" and (ask - bid) / s.point > Cfg.max_spread:
             return await self.report(cid, status="REJECTED", error=f"connector: spread {(ask - bid) / s.point:.0f} pts > {Cfg.max_spread}")
         acc = self.st.account_id
+
+        if o["action"] == "MODIFY":
+            pid = int(o["position_ticket"])
+            sl = round(float(o["stop_loss"]), s.digits)
+            tp = round(float(o["take_profit"]), s.digits) if o.get("take_profit") else None
+            await self.client.send_nowait(PT["AMEND_SLTP_REQ"], {"ctidTraderAccountId": acc, "positionId": pid, "stopLoss": sl,
+                                                                 **({"takeProfit": tp} if tp else {})})
+            p = None
+            for _ in range(10):
+                await asyncio.sleep(0.5)
+                rec = await self.client.send(PT["RECONCILE_REQ"], {"ctidTraderAccountId": acc})
+                p = next((x for x in rec.get("position", []) if i(x["positionId"]) == pid), None)
+                if p and p.get("stopLoss") and abs(float(p["stopLoss"]) - sl) <= 2 * s.point:
+                    break
+            ok = bool(p and p.get("stopLoss") and abs(float(p["stopLoss"]) - sl) <= 2 * s.point)
+            return await self.report(cid, status="FILLED" if ok else "REJECTED", ticket=pid, price=sl, volume=o["volume"],
+                                     sl_verified=ok, sl=float(p["stopLoss"]) if p and p.get("stopLoss") else None,
+                                     tp=float(p["takeProfit"]) if p and p.get("takeProfit") else None,
+                                     error="" if ok else "connector: new stop-loss not confirmed by cTrader")
 
         if o["action"] == "CLOSE":
             pos = next((p for p in getattr(self, "_positions", []) if str(i(p["positionId"])) == str(o["position_ticket"])), None)

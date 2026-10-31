@@ -93,6 +93,22 @@ DEFAULTS: dict[str, Any] = {
         "capital": {"environment": "demo", "identifier": "", "api_key_enc": "", "api_password_enc": "", "account_id": ""},
         "ctrader": {"client_id": "", "client_secret_enc": "", "access_token_enc": "", "refresh_token_enc": "", "account_login": ""},
     },
+    # Trading on/off switches and filters (Live trading page control bar).
+    "controls": {
+        "auto_trading": True,  # strategy may place orders (when the mode allows orders)
+        "manual_trading": True,  # manual order ticket allowed
+        "disabled_symbols": [],  # symbols where no new orders are opened
+        "session_filter": False,  # only open new trades between these UTC hours
+        "session_start_utc": 7,
+        "session_end_utc": 20,
+        "news_filter": True,  # pause new trades around important economic news
+        "news_before_min": 30,
+        "news_after_min": 15,
+        "news_impacts": ["High"],
+        "default_breakeven_r": None,  # auto-management applied to strategy trades
+        "default_trailing_atr": None,
+    },
+    "news_status": {"ok": False, "last_fetch": "", "error": "", "count": 0},
     "connector_status": {},  # per connector: state, message, at
     "external_positions": {"connector": "", "at": "", "positions": []},
     "ai": {"provider": "none", "model": "", "api_key_enc": "", "enabled": False, "share_data": True},

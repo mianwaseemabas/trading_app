@@ -287,3 +287,73 @@ class BacktestRun(Base):
     folds: Mapped[list] = mapped_column(JSON, default=list)
     error: Mapped[str] = mapped_column(Text, default="")
     finished_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+
+
+# ------------------------------------------------------- news / pro trading
+class NewsEvent(Base):
+    """Scheduled economic releases (economic calendar)."""
+
+    __tablename__ = "news_events"
+    __table_args__ = (UniqueConstraint("title", "currency", "time", name="uq_news_event"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    time: Mapped[datetime] = mapped_column(TS, index=True)  # UTC
+    currency: Mapped[str] = mapped_column(String(8), index=True)
+    impact: Mapped[str] = mapped_column(String(12))  # High | Medium | Low | Holiday
+    title: Mapped[str] = mapped_column(String(200))
+    forecast: Mapped[str] = mapped_column(String(40), default="")
+    previous: Mapped[str] = mapped_column(String(40), default="")
+    actual: Mapped[str] = mapped_column(String(40), default="")
+    fetched_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+
+
+class PendingOrder(Base):
+    """Limit / stop orders held by the app until the price reaches the trigger level."""
+
+    __tablename__ = "pending_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(64))
+    mode: Mapped[str] = mapped_column(String(16))
+    symbol: Mapped[str] = mapped_column(String(32))
+    side: Mapped[str] = mapped_column(String(4))
+    order_type: Mapped[str] = mapped_column(String(8))  # LIMIT | STOP
+    trigger_price: Mapped[float] = mapped_column(Float)
+    stop_loss: Mapped[float] = mapped_column(Float)
+    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sizing_mode: Mapped[str] = mapped_column(String(12), default="risk_pct")  # risk_pct | risk_amount | lots
+    sizing_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    management: Mapped[dict] = mapped_column(JSON, default=dict)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(12), default="WORKING", index=True)  # WORKING|TRIGGERED|CANCELLED|EXPIRED|REJECTED
+    expires_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    order_client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
+
+
+class PositionMgmt(Base):
+    """Automatic trade management for an open position (breakeven / trailing stop)."""
+
+    __tablename__ = "position_mgmt"
+
+    position_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    initial_sl: Mapped[float] = mapped_column(Float)
+    breakeven_r: Mapped[float | None] = mapped_column(Float, nullable=True)  # move SL to entry at +x R
+    trailing_atr: Mapped[float | None] = mapped_column(Float, nullable=True)  # trail SL at x * ATR
+    breakeven_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_action_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+
+
+class TradeNote(Base):
+    """Trade journal note for a position."""
+
+    __tablename__ = "trade_notes"
+
+    position_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+    updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)

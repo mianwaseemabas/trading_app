@@ -18,13 +18,18 @@ const GLOSSARY = [
   ["Out-of-sample", "The last part of the history that the strategy was not tuned on — the most honest test."],
   ["Profit factor", "Gross profit ÷ gross loss. Above 1 = profitable after costs; above ~1.3 over many trades is encouraging."],
   ["Drawdown", "The biggest fall from a peak in your equity. Shows how painful the losing streaks were."],
+  ["Market / Limit / Stop order", "Market = now at the current price. Limit = wait for a better price (buy lower / sell higher). Stop = wait for a breakout (buy higher / sell lower)."],
+  ["Risk $ (limit amount)", "In the order ticket choose 'Risk $' and type e.g. 2: the app sizes the trade so hitting the stop-loss loses about $2 (never more than your risk limit)."],
+  ["R / R-multiple", "1R = the amount you risked. Closing at +2R means you won twice what you risked."],
+  ["Break-even / trailing stop", "Auto-protect: move the stop to your entry once the trade is +1R in profit, or let it follow the price at a distance of N × ATR."],
+  ["High-impact news", "Scheduled economic releases (rates, jobs, inflation) that can move prices sharply. The news filter blocks new trades around them."],
   ["Kill switch", "Emergency stop: blocks all new orders immediately (optionally closes open positions)."],
 ];
 
 const MODES = [
   ["OFF", "Nothing happens."],
   ["SIGNALS ONLY", "The strategy analyses each new candle and logs BUY/SELL signals, but places no orders."],
-  ["PAPER", "Simulated trades at real broker prices, with a virtual $500 account. Perfect for learning."],
+  ["PRACTICE (PAPER)", "Paper trading = practice. A virtual $500 account inside this app, filled at real broker prices. Nothing goes to a broker and no money can be lost. Start here."],
   ["BROKER DEMO", "Real orders on your broker's demo (practice-money) account."],
   ["BROKER LIVE", "Real money. Locked until the live checklist is approved and real-money orders are allowed on the Brokers page."],
 ];
@@ -58,7 +63,7 @@ export default function Guide() {
     { done: st?.data?.source === "mt5" && candles > 1000, title: "Use real broker prices", how: "System → Use broker data. History downloads automatically.", link: "#/settings" },
     { done: risk?.risk?.commission_per_lot === 0 || active !== "capital", title: "Set costs for your broker", how: "Capital.com has no commission: Risk & Strategy → Commission per lot = 0.", link: "#/risk" },
     { done: (bts || []).some((b) => b.status === "DONE" && b.summary?.trades > 0), title: "Run a backtest", how: "Backtest → EURUSD, H1 → Run. Read the warnings and out-of-sample results.", link: "#/backtest" },
-    { done: ["PAPER", "MT5_DEMO", "MT5_LIVE"].includes(st?.trading?.mode), title: "Start paper trading", how: "Dashboard → mode PAPER. Watch Live trading and Signals for a week.", link: "#/dashboard" },
+    { done: ["PAPER", "MT5_DEMO", "MT5_LIVE"].includes(st?.trading?.mode), title: "Start practice (paper) trading", how: "Dashboard → PRACTICE (PAPER). Then Live trading → + New order → Risk $ → Place. Watch it for a week.", link: "#/dashboard" },
     { done: st?.trading?.mode === "MT5_DEMO" || st?.trading?.mode === "MT5_LIVE", title: "Trade on the broker demo", how: "Dashboard → BROKER DEMO for 2–4 weeks; compare with your broker app.", link: "#/dashboard" },
     { done: !!ai?.enabled, title: "Turn on your AI coach (optional)", how: "AI Assistant → choose provider, model and API key.", link: "#/assistant" },
   ];
@@ -78,11 +83,21 @@ export default function Guide() {
             <li>Everything is recorded: Signals (why), Trades (result), Audit (who did what).</li>
           </ol>
         </Card>
+        <Card title="Place your first trade (practice)">
+          <ol className="small">
+            <li>Dashboard → click <b>PRACTICE (PAPER)</b>.</li>
+            <li>Live trading → <b>+ New order</b>. Pick EURUSD and BUY or SELL.</li>
+            <li>Keep the suggested stop-loss/take-profit. Under <b>Trade size</b> pick <b>Risk $</b> — it fills in your maximum (0.5% of the account = $2.50 on $500); type a smaller amount if you want.</li>
+            <li>Read "If stop-loss hits −$… / If take-profit hits +$…" and press <b>Place</b>.</li>
+            <li>Click the position to watch it on a chart, move the stop, and write a journal note. After it closes, see Trades → Performance.</li>
+          </ol>
+        </Card>
         <Card title="Trading modes">
           <dl className="dl">{MODES.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}</dl>
         </Card>
         <Card title="Daily routine (5 minutes)">
           <ol className="small">
+            <li><b>News</b>: any red (High) events today for your currencies? Avoid opening trades just before them.</li>
             <li><b>Live trading</b>: check open positions, P&L and that every position has a stop-loss.</li>
             <li><b>Dashboard</b>: broker connection green, no LOCKED / RECONCILIATION badges, loss meters well below limits.</li>
             <li><b>Signals</b>: read why trades were taken or rejected (click a row). Ask the AI coach to explain anything unclear.</li>

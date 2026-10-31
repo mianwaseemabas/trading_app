@@ -61,9 +61,12 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
 
     if res.action == "NONE":
         return sig
-    can_trade = mode in trading.ORDER_MODES and tf in cfg.get("trade_timeframes", [])
+    controls = state.get(db, "controls")
+    can_trade = mode in trading.ORDER_MODES and tf in cfg.get("trade_timeframes", []) and controls.get("auto_trading", True)
     if not can_trade:
         sig.status = "SIGNAL_ONLY"
+        if not controls.get("auto_trading", True):
+            sig.reasons = list(sig.reasons) + [{"check": "auto trading switched off", "passed": False}]
         notify(f"📈 Signal {res.action} {symbol} {tf} (not traded: mode {mode})",
                state.get(db, "notifications")["notify_signals"])
         return sig
@@ -98,6 +101,20 @@ def tick(db: Session) -> None:
     trading.expire_orders(db)
     trading.check_loss_limits(db, mode)
     db.commit()
+
+    from . import news, pro
+    try:
+        news.refresh(db)
+    except Exception as e:
+        db.rollback()
+        log.warning("news refresh failed: %s", e)
+    for job in (pro.process_pending, pro.manage_positions):
+        try:
+            job(db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            log.exception("%s failed", job.__name__)
 
     if mode == "OFF":
         return

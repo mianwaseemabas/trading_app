@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, setCsrf, setUnauthorizedHandler } from "./api.js";
-import { Badge, Field, modeTone, useApi, useToast } from "./components.jsx";
+import { Badge, Field, modeLabel, modeTone, useApi, useToast } from "./components.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Market from "./pages/Market.jsx";
 import Signals from "./pages/Signals.jsx";
@@ -15,6 +15,7 @@ import Live from "./pages/Live.jsx";
 import Brokers from "./pages/Brokers.jsx";
 import Assistant from "./pages/Assistant.jsx";
 import Guide from "./pages/Guide.jsx";
+import News from "./pages/News.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -22,6 +23,7 @@ export const useAuth = () => useContext(AuthCtx);
 const ROUTES = [
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live },
+  { k: "news", label: "News", icon: "◉", perm: "market.view", el: News },
   { k: "market", label: "Market", icon: "◫", perm: "market.view", el: Market },
   { k: "signals", label: "Signals", icon: "◇", perm: "signals.view", el: Signals },
   { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades },
@@ -138,7 +140,7 @@ function TopBar({ user, logout }) {
   return (
     <header className="topbar">
       <div className="row gap">
-        {tr && <Badge tone={modeTone(tr.mode)}>Mode: {tr.mode}</Badge>}
+        {tr && <Badge tone={modeTone(tr.mode)}>Mode: {modeLabel(tr.mode)}</Badge>}
         {tr?.kill_switch && <Badge tone="bad">KILL SWITCH ON</Badge>}
         {tr?.locked && <Badge tone="bad" title={tr.lock_reason}>LOCKED</Badge>}
         {data?.data?.source === "simulator" && <Badge tone="warn" title="Synthetic data for testing only">SIMULATED DATA</Badge>}

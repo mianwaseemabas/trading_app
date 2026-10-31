@@ -401,3 +401,58 @@ export function CandleChart({ candles, digits = 5, markers = [] }) {
     </div>
   );
 }
+
+// ------------------------------------------------------------- pro helpers
+export const MODE_LABEL = { OFF: "OFF", SIGNALS_ONLY: "SIGNALS ONLY", PAPER: "PRACTICE (PAPER)", MT5_DEMO: "BROKER DEMO", MT5_LIVE: "BROKER LIVE" };
+export const modeLabel = (m) => MODE_LABEL[m] || m;
+
+export const Switch = ({ on, onChange, label, hint, disabled }) => (
+  <label className={`switch ${on ? "on" : ""} ${disabled ? "disabled" : ""}`} title={hint}>
+    <input type="checkbox" checked={!!on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+    <span className="knob" />
+    <span className="switch-label">{label}</span>
+  </label>
+);
+
+export function countdown(iso) {
+  const s = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
+  const a = Math.abs(s);
+  const txt = a < 3600 ? `${Math.floor(a / 60)}m` : a < 86400 ? `${Math.floor(a / 3600)}h ${Math.floor((a % 3600) / 60)}m` : `${Math.floor(a / 86400)}d ${Math.floor((a % 86400) / 3600)}h`;
+  return s >= 0 ? `in ${txt}` : `${txt} ago`;
+}
+
+export const impactTone = (i) => ({ High: "bad", Medium: "warn", Low: "muted" }[i] || "muted");
+
+/** Simple price chart (closes as a line + high/low band) with horizontal level lines (entry / SL / TP). */
+export function LevelChart({ candles, levels = [], digits = 5, height = 260, marks = [] }) {
+  const [ref, w] = useWidth();
+  if (!candles?.length) return <div ref={ref} className="muted pad">No price history stored for this period yet.</div>;
+  const pad = { l: 8, r: 104, t: 10, b: 22 };
+  const vals = candles.flatMap((c) => [c.high, c.low]).concat(levels.filter((l) => l.price).map((l) => l.price));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const m = (hi - lo) * 0.06 || 0.001; lo -= m; hi += m;
+  const n = candles.length;
+  const X = (i) => pad.l + (i / Math.max(1, n - 1)) * (w - pad.l - pad.r);
+  const Y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (height - pad.t - pad.b);
+  const band = candles.map((c, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(c.high).toFixed(1)}`).join("") +
+    candles.slice().reverse().map((c, j) => `L${X(n - 1 - j).toFixed(1)},${Y(c.low).toFixed(1)}`).join("") + "Z";
+  const tAt = (t) => { let best = 0; candles.forEach((c, i) => { if (Math.abs(c.time - t) < Math.abs(candles[best].time - t)) best = i; }); return best; };
+  return (
+    <div ref={ref} className="chart">
+      <svg width={w} height={height}>
+        <path d={band} fill="var(--accent)" opacity="0.10" />
+        <path d={candles.map((c, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(c.close).toFixed(1)}`).join("")} fill="none" stroke="var(--accent)" strokeWidth="1.6" />
+        {levels.filter((l) => l.price).map((l) => (
+          <g key={l.label}>
+            <line x1={pad.l} x2={w - pad.r} y1={Y(l.price)} y2={Y(l.price)} stroke={l.color} strokeDasharray={l.dash ? "5 4" : undefined} strokeWidth="1.3" />
+            <text x={w - pad.r + 4} y={Y(l.price) + 4} className="axis" fill={l.color}>{l.label} {Number(l.price).toFixed(digits)}</text>
+          </g>
+        ))}
+        {marks.map((mk, i) => {
+          const x = X(tAt(mk.time));
+          return <g key={i}><line x1={x} x2={x} y1={pad.t} y2={height - pad.b} stroke={mk.color || "var(--muted)"} strokeDasharray="2 3" /><text x={x + 3} y={height - 6} className="axis">{mk.label}</text></g>;
+        })}
+      </svg>
+    </div>
+  );
+}
