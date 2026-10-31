@@ -17,15 +17,15 @@ dpkg -l unattended-upgrades 2>/dev/null | grep -q '^ii' && ok "automatic securit
 echo; echo "-- SSH"
 SSHD=$(sshd -T 2>/dev/null)
 v(){ echo "$SSHD" | awk -v k="$1" '$1==k{print $2}'; }
-[ "$(v permitrootlogin)" = "no" ] && ok "root login disabled" || warn "PermitRootLogin = $(v permitrootlogin) (recommended: no, after you have a sudo user with an SSH key)"
-[ "$(v passwordauthentication)" = "no" ] && ok "password login disabled (keys only)" || bad "PasswordAuthentication = yes — attackers can guess passwords; switch to SSH keys"
+case "$(v permitrootlogin)" in no) ok "root login disabled";; without-password|prohibit-password) ok "root can log in with an SSH key only";; *) warn "PermitRootLogin = $(v permitrootlogin) (recommended: prohibit-password = key only)";; esac
+[ "$(v passwordauthentication)" = "no" ] && ok "password login disabled (keys only)" || bad "PasswordAuthentication = yes — attackers can guess passwords; add your SSH key, then: sudo $APP_DIR/deploy/harden-server.sh --ssh"
 echo "  SSH port: $(v port)"
-systemctl is-active --quiet fail2ban && ok "fail2ban running" || warn "fail2ban not running (blocks SSH brute force)"
+systemctl is-active --quiet fail2ban && ok "fail2ban running ($(fail2ban-client status sshd 2>/dev/null | grep -o 'Currently banned:.*' ))" || bad "fail2ban not running (blocks SSH brute force) — run: sudo $APP_DIR/deploy/harden-server.sh"
 f=$(journalctl -u ssh -u sshd --since '24 hours ago' 2>/dev/null | grep -c 'Failed password\|Invalid user')
 echo "  failed SSH logins last 24 h: ${f:-?}"
 
 echo; echo "-- Firewall and open ports"
-if command -v ufw >/dev/null; then ufw status | head -1 | grep -q active && ok "ufw firewall active" || bad "ufw installed but INACTIVE"; ufw status | sed -n '1,20p' | sed 's/^/  /'
+if command -v ufw >/dev/null; then ufw status | head -1 | grep -q '^Status: active' && ok "ufw firewall active" || bad "ufw firewall INACTIVE — run: sudo $APP_DIR/deploy/harden-server.sh"; ufw status | sed -n '1,20p' | sed 's/^/  /'
 else warn "ufw not installed (check another firewall)"; fi
 echo "  listening on the internet (not 127.0.0.1):"
 ss -tlnH 2>/dev/null | awk '{print $4}' | grep -vE '^(127\.|\[::1\]|::1)' | sort -u | sed 's/^/    /'
@@ -42,7 +42,8 @@ git status --porcelain 2>/dev/null | grep -v '^??' | head -3 | sed 's/^/  local 
 
 echo; echo "-- Containers"
 docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}' 2>/dev/null | sed 's/^/  /'
-docker compose ps --format '{{.Service}} {{.Publishers}}' 2>/dev/null | grep -E '0\.0\.0\.0|:::' && bad "a container port is published on all interfaces" || ok "no container published on 0.0.0.0"
+pub=$(docker compose ps --format '{{.Service}} {{.Publishers}}' 2>/dev/null | grep -v '^caddy ' | grep -E '0\.0\.0\.0|\[::\]')
+[ -n "$pub" ] && { bad "a container port is published on all interfaces:"; echo "$pub" | sed 's/^/    /'; } || ok "only Caddy (HTTPS, ports 80/443) is public — as intended"
 
 echo; echo "-- HTTPS"
 D=$(grep -E '^DOMAIN=' .env | cut -d= -f2)
