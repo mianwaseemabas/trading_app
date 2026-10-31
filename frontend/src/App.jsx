@@ -19,11 +19,13 @@ import News from "./pages/News.jsx";
 import Overview from "./pages/Overview.jsx";
 import Setups from "./pages/Setups.jsx";
 import Smc from "./pages/Smc.jsx";
+import Terminal from "./pages/Terminal.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
+  { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true },
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard },
   { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups },
@@ -45,7 +47,7 @@ const ROUTES = [
 ];
 
 function useHashRoute() {
-  const get = () => (window.location.hash.replace(/^#\/?/, "") || "dashboard").split("?")[0];
+  const get = () => (window.location.hash.replace(/^#\/?/, "") || "terminal").split("?")[0];
   const [r, setR] = useState(get);
   useEffect(() => {
     const h = () => setR(get());
@@ -88,7 +90,7 @@ function Login({ onDone }) {
   return (
     <div className="login-wrap">
       <form className="login card" onSubmit={submit}>
-        <div className="brand big"><span className="logo">Q</span> Qivynex Trade</div>
+        <div className="brand big"><span className="logo">Q</span><span>Qivynex<small className="brand-sub">Trading Intelligence Platform</small></span></div>
         <p className="muted small">Private system. Accounts are created by the administrator only.</p>
         {step === "password" ? (
           <>
@@ -204,20 +206,20 @@ export default function App() {
 
   return (
     <AuthCtx.Provider value={{ user, setUser: applyUser, can: (p) => user.permissions.includes(p) }}>
-      <div className="shell">
+      <div className={`shell ${current.flush ? "compact" : ""}`}>
         <nav className="side">
-          <div className="brand"><span className="logo">Q</span> Qivynex Trade</div>
+          <div className="brand"><span className="logo">Q</span><span>Qivynex<small className="brand-sub">Intelligence Platform</small></span></div>
           {allowed.map((r) => (
-            <a key={r.k} href={`#/${r.k}`} className={r.k === current.k ? "nav on" : "nav"}>
-              <span className="nav-i">{r.icon}</span>{r.label}
+            <a key={r.k} href={`#/${r.k}`} title={r.label} className={r.k === current.k ? "nav on" : "nav"}>
+              <span className="nav-i">{r.icon}</span><span className="nav-t">{r.label}</span>
             </a>
           ))}
           <div className="side-foot muted small">Automated trading can lose money. Demo first.</div>
         </nav>
         <main className="main">
           <TopBar user={user} logout={logout} />
-          <div className="page">
-            <h1>{current.label}</h1>
+          <div className={`page ${current.flush ? "flush" : ""}`}>
+            {!current.flush && <h1>{current.label}</h1>}
             <Page />
           </div>
         </main>

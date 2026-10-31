@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 
 from .config import settings
 from .db import init_db, session_scope
-from .routers import ai, auth, backtests, bridge, brokers, live, market, news, setups, system, trades, users
+from .routers import ai, auth, backtests, bridge, brokers, crypto, intel, live, market, news, setups, system, trades, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -48,7 +48,7 @@ async def unhandled(request: Request, exc: Exception):
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 
-for r in (auth, users, system, setups, market, trades, backtests, bridge, brokers, live, ai, news):
+for r in (auth, users, system, setups, crypto, intel, market, trades, backtests, bridge, brokers, live, ai, news):
     app.include_router(r.router)
 app.include_router(live.pos_router)
 

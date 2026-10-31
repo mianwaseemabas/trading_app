@@ -55,6 +55,13 @@ ALLOW_REAL = E.get("ALLOW_REAL_ACCOUNT", "false").lower() == "true"
 LOOP_SECONDS = float(E.get("LOOP_SECONDS", "5"))
 BACKFILL_BARS = int(E.get("BACKFILL_BARS", "5000"))
 UNITS_PER_APP_LOT = 100_000  # FX standard lot
+FX_CCY = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "SEK", "NOK", "SGD", "HKD", "MXN", "ZAR", "TRY", "CNH", "PLN"}
+
+
+def is_fx(name: str) -> bool:
+    """Forex pairs are sized in standard lots (100,000 units); everything else (stocks, indices,
+    commodities, crypto CFDs) is sized in Capital.com's own units: 1 app lot = 1 Capital.com size."""
+    return len(name) == 6 and name[:3] in FX_CCY and name[3:] in FX_CCY
 UNITS_PER_SIZE_OVERRIDE = E.get("CAPITAL_UNITS_PER_SIZE", "")  # optional manual override
 EPIC_MAP = dict(p.split("=", 1) for p in E.get("SYMBOL_MAP", "").split(",") if "=" in p)
 
@@ -194,12 +201,20 @@ class Market:
     quote_time: float = 0.0
 
     @property
+    def fx(self) -> bool:
+        return is_fx(self.app_name)
+
+    @property
+    def app_lot_units(self) -> float:
+        return UNITS_PER_APP_LOT if self.fx else self.units_per_size
+
+    @property
     def point(self) -> float:
         return 10 ** -self.digits
 
     def size_unit_problem(self) -> str | None:
         """Refuse to trade when the meaning of 'size' is ambiguous (protects against 100,000x errors)."""
-        if UNITS_PER_SIZE_OVERRIDE:
+        if UNITS_PER_SIZE_OVERRIDE or not self.fx:
             return None
         if self.units_per_size == 1 and self.min_size < 1:
             return (f"{self.app_name}: lotSize=1 but minDealSize={self.min_size}; size units unclear. "
@@ -210,10 +225,10 @@ class Market:
         return None
 
     def lots(self, size: float) -> float:
-        return round(size * self.units_per_size / UNITS_PER_APP_LOT, 4)
+        return round(size * self.units_per_size / self.app_lot_units, 8 if not self.fx else 4)
 
     def size(self, lots: float) -> float:
-        raw = lots * UNITS_PER_APP_LOT / self.units_per_size
+        raw = lots * self.app_lot_units / self.units_per_size
         steps = int(raw / self.size_step + 1e-9)
         return round(steps * self.size_step, 8)
 
@@ -271,7 +286,7 @@ class Connector:
                    float((rules.get("minDealSize") or {}).get("value") or 1),
                    float((rules.get("maxDealSize") or {}).get("value") or 1e9),
                    float((rules.get("minSizeIncrement") or {}).get("value") or 1),
-                   name[:3], ccy if len(ccy) == 3 else name[3:],
+                   name[:3] if is_fx(name) else "", (ccy if len(ccy) == 3 else name[3:]) if is_fx(name) else (inst.get("currency") or "USD"),
                    snap.get("marketStatus", "TRADEABLE") == "TRADEABLE")
         m.bid, m.ask = float(snap.get("bid") or 0), float(snap.get("offer") or 0)
         m.quote_time = time.time()
@@ -290,9 +305,9 @@ class Connector:
                 self.markets.pop(name, None)
 
     def symbols_payload(self) -> list[dict]:
-        return [{"symbol": m.app_name, "digits": m.digits, "point": m.point, "trade_contract_size": UNITS_PER_APP_LOT,
+        return [{"symbol": m.app_name, "digits": m.digits, "point": m.point, "trade_contract_size": m.app_lot_units,
                  "trade_tick_size": m.point, "volume_min": m.lots(m.min_size), "volume_max": m.lots(m.max_size),
-                 "volume_step": max(0.01, m.lots(m.size_step)), "currency_base": m.base, "currency_profit": m.quote,
+                 "volume_step": max(0.01, m.lots(m.size_step)) if m.fx else m.lots(m.size_step), "currency_base": m.base, "currency_profit": m.quote,
                  "trade_allowed": m.tradeable} for m in self.markets.values()]
 
     def quotes_payload(self) -> list[dict]:

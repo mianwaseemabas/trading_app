@@ -40,6 +40,23 @@ def spec_of(inst: Instrument) -> InstrumentSpec:
     )
 
 
+def is_fx(inst: Instrument | None) -> bool:
+    """Forex pairs carry a base currency; stocks, indices, commodities and CFDs do not."""
+    return bool(inst is None or inst.currency_base)
+
+
+def asset_cfg(cfg: dict, inst: Instrument | None, price: float) -> dict:
+    """Risk settings are written for forex (points, $ per standard lot). For other assets the
+    spread/slippage limits become a % of price and no per-lot commission is applied."""
+    if is_fx(inst) or not inst or not inst.point or not price:
+        return cfg
+    out = dict(cfg)
+    out["max_spread_points"] = float(cfg.get("max_spread_pct_other", 0.2)) / 100 * price / inst.point
+    out["max_slippage_points"] = max(1, round(float(cfg.get("slippage_pct_other", 0.05)) / 100 * price / inst.point))
+    out["commission_per_lot"] = 0.0
+    return out
+
+
 def value_per_unit(db: Session, inst: Instrument, account_ccy: str, quotes: dict) -> float | None:
     if inst.source == "mt5" and inst.tick_value and inst.tick_size:
         return inst.tick_value / inst.tick_size
@@ -76,6 +93,9 @@ def open_positions(db: Session, mode: str) -> list[Position]:
 # --------------------------------------------------------------- accounting
 def account_state(db: Session, mode: str) -> tuple[AccountState | None, dict]:
     """Return current account state for a trading mode, plus metadata."""
+    if mode.startswith("CRYPTO_"):
+        from .crypto import desk
+        return desk.account(db, mode)
     if mode in MT5_MODES:
         snap = db.scalar(
             select(AccountSnapshot).where(AccountSnapshot.source == "mt5").order_by(AccountSnapshot.at.desc()).limit(1)
@@ -137,7 +157,7 @@ def losses(acct: AccountState, anchor: dict, include_unrealized: bool) -> tuple[
 
 def check_loss_limits(db: Session, mode: str) -> dict | None:
     """Lock new trading if daily/weekly loss limits are breached. Returns loss info."""
-    if mode not in ORDER_MODES:
+    if mode not in ORDER_MODES and not mode.startswith("CRYPTO_"):
         return None
     acct, _ = account_state(db, mode)
     if acct is None:
@@ -216,6 +236,7 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
         extra.append(("inside trading hours", inside, f"{h:02d}:00 UTC, allowed {a:02d}:00–{b:02d}:00"))
     news_ok, news_detail = news_check(db, symbol, controls)
     extra.append(("no high-impact news window", news_ok, news_detail))
+    cfg = asset_cfg(cfg, inst, q.ask if q else 0)
     return RiskContext(
         side=side,
         extra_checks=extra,
@@ -243,7 +264,7 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
         reconciliation_ok=bool(rec.get("ok", True)),
         reconciliation_detail=rec.get("detail", ""),
         profit_to_account_rate=md.conversion_rate(inst.currency_profit, acct.currency, quotes),
-        base_to_account_rate=md.conversion_rate(inst.currency_base, acct.currency, quotes),
+        base_to_account_rate=md.conversion_rate(inst.currency_base, acct.currency, quotes) if inst.currency_base else None,
         duplicate=duplicate,
     )
 
@@ -306,7 +327,7 @@ def close_paper_position(db: Session, p: Position, price: float, reason: str) ->
     quotes = md.latest_quotes(db)
     vpu = value_per_unit(db, inst, pa["currency"], quotes) or 0
     gross = (price - p.open_price if p.side == "BUY" else p.open_price - price) * p.volume * vpu
-    commission = state.get(db, "risk")["commission_per_lot"] * p.volume
+    commission = state.get(db, "risk")["commission_per_lot"] * p.volume if is_fx(inst) else 0.0
     p.status, p.closed_at, p.close_price, p.close_reason = "CLOSED", utcnow(), price, reason
     p.commission = commission
     p.realized_pnl = round(gross - commission, 2)
@@ -350,6 +371,10 @@ def update_paper_positions(db: Session) -> None:
 def request_close(db: Session, p: Position, reason: str, by: str) -> Order | None:
     """Close a position: immediately for PAPER, via a signed close order for MT5."""
     if p.status != "OPEN":
+        return None
+    if p.mode.startswith("CRYPTO_"):
+        from .crypto import desk
+        desk.close(db, p, reason, by)
         return None
     if p.mode == "PAPER":
         q = db.get(Quote, p.symbol)
@@ -494,6 +519,10 @@ def request_modify(db: Session, p: Position, new_sl: float | None, new_tp: float
             raise ValueError("the stop-loss can only be moved closer (tightened), never further away")
         if tp is not None and tp >= px:
             raise ValueError(f"take-profit must be below the current price {px}")
+    if p.mode.startswith("CRYPTO_"):
+        from .crypto import desk
+        desk.modify(db, p, sl, tp, by, reason)
+        return None
     if p.mode == "PAPER":
         old = (p.stop_loss, p.take_profit)
         p.stop_loss, p.take_profit = sl, tp

@@ -153,6 +153,12 @@ def tick(db: Session) -> None:
     except Exception as e:
         db.rollback()
         log.warning("news refresh failed: %s", e)
+    from .crypto import desk
+    try:
+        desk.tick(db)
+    except Exception:
+        db.rollback()
+        log.exception("crypto desk tick failed")
     for job in (pro.process_pending, pro.manage_positions):
         try:
             job(db)

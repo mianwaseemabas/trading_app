@@ -255,8 +255,8 @@ def put_strategy(body: StrategyIn, request: Request, user: User = Depends(requir
             new[k] = int(v) if isinstance(state.DEFAULTS["strategy"][k], int) else v
         elif k == "symbols":
             syms = [s.strip().upper() for s in v if s.strip()]
-            if not syms or len(syms) > 10 or not all(s.isalnum() and 3 <= len(s) <= 16 for s in syms):
-                raise HTTPException(400, "Provide 1-10 valid symbols")
+            if not syms or len(syms) > 20 or not all(s.replace("_", "").isalnum() and 2 <= len(s) <= 16 for s in syms):
+                raise HTTPException(400, "Provide 1-20 valid broker symbols (e.g. EURUSD, GOLD, US500, AAPL)")
             new[k] = syms
         elif k in ("timeframes", "trade_timeframes"):
             if not all(t in TF_SECONDS for t in v):

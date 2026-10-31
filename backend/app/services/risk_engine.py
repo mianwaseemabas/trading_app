@@ -121,7 +121,7 @@ def evaluate(ctx: RiskContext) -> RiskDecision:
     for name, passed, detail in ctx.extra_checks:
         check(name, passed, detail)
     check("no loss-limit lock", not ctx.locked, ctx.lock_reason)
-    check("trading mode allows orders", ctx.mode in {"PAPER", "MT5_DEMO", "MT5_LIVE"}, ctx.mode)
+    check("trading mode allows orders", ctx.mode in {"PAPER", "MT5_DEMO", "MT5_LIVE", "CRYPTO_PAPER", "CRYPTO_TEST", "CRYPTO_LIVE"}, ctx.mode)
     check("forbidden techniques disabled",
           not cfg.get("martingale") and not cfg.get("grid"), "martingale/grid must be off")
     check("not a duplicate order", not ctx.duplicate)
@@ -181,7 +181,7 @@ def evaluate(ctx: RiskContext) -> RiskDecision:
     if sized:
         decision.volume = vol
         decision.risk_amount = round(vol * loss_per_lot, 2)
-        check("risk amount within budget", decision.risk_amount <= budget + 1e-9,
+        check("risk amount within budget", vol * loss_per_lot <= budget + 1e-9,
               f"{decision.risk_amount:.2f} <= {budget:.2f}")
 
         base_rate = ctx.base_to_account_rate

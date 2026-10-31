@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-MARKETS = {"EURUSD": (1.08000, 5), "GBPUSD": (1.27000, 5), "USDJPY": (150.000, 3)}
+MARKETS = {"EURUSD": (1.08000, 5), "GBPUSD": (1.27000, 5), "USDJPY": (150.000, 3), "AAPL": (230.00, 2)}
 STATE = {"max_span": 10**9, "balance": 500.0, "positions": {}, "confirms": {}, "activities": [], "no_stop": False, "lot_size": 1, "contract": 1}
 LOCK = threading.Lock()
 
@@ -57,7 +57,7 @@ class H(BaseHTTPRequestHandler):
             px, digits = MARKETS[b["epic"]]
             assert "stopLevel" in b, "stopLevel must be sent"
             buy = b["direction"] == "BUY"
-            level = round(px + (0.0001 if b["epic"] != "USDJPY" else 0.012), digits) if buy else px
+            level = round(px + {5: 0.0001, 3: 0.012, 2: 0.05}[digits], digits) if buy else px
             ref, deal_id = "o_" + uuid.uuid4().hex[:8], uuid.uuid4().hex[:12]
             with LOCK:
                 STATE["positions"][deal_id] = {"position": {
@@ -127,11 +127,14 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r"/api/v1/markets/(\w+)$", u.path)
         if m and m.group(1) in MARKETS:
             px, digits = MARKETS[m.group(1)]
-            return self._send(200, {"instrument": {"epic": m.group(1), "name": m.group(1), "lotSize": STATE["lot_size"], "type": "CURRENCIES",
-                                                   "currency": m.group(1)[3:], "streamingPricesAvailable": True},
-                                    "dealingRules": {"minDealSize": {"unit": "POINTS", "value": 100}, "maxDealSize": {"unit": "POINTS", "value": 10000000},
-                                                     "minSizeIncrement": {"unit": "POINTS", "value": 1}},
-                                    "snapshot": {"marketStatus": "TRADEABLE", "bid": px, "offer": round(px + (0.0001 if digits == 5 else 0.012), digits),
+            stock = m.group(1) == "AAPL"
+            return self._send(200, {"instrument": {"epic": m.group(1), "name": m.group(1), "lotSize": 1 if stock else STATE["lot_size"],
+                                                   "type": "SHARES" if stock else "CURRENCIES",
+                                                   "currency": "USD" if stock else m.group(1)[3:], "streamingPricesAvailable": True},
+                                    "dealingRules": {"minDealSize": {"unit": "POINTS", "value": 0.1 if stock else 100},
+                                                     "maxDealSize": {"unit": "POINTS", "value": 10000000},
+                                                     "minSizeIncrement": {"unit": "POINTS", "value": 0.1 if stock else 1}},
+                                    "snapshot": {"marketStatus": "TRADEABLE", "bid": px, "offer": round(px + {5: 0.0001, 3: 0.012, 2: 0.05}[digits], digits),
                                                  "decimalPlacesFactor": digits, "scalingFactor": 1}})
         m = re.match(r"/api/v1/prices/(\w+)$", u.path)
         if m:

@@ -15,7 +15,7 @@ from .. import state
 from ..audit import audit
 from ..db import get_db
 from ..deps import client_ip, require
-from ..models import Order, Signal, SignalApproval, SmcEvent, User, utcnow
+from ..models import Order, Quote, Signal, SignalApproval, SmcEvent, User, utcnow
 from ..services import market_data as md
 from ..services import report, smc, trading
 from ..services.indicators import add_indicators
@@ -76,6 +76,8 @@ def approve(signal_id: int, body: DecisionIn, request: Request, user: User = Dep
         sig.status = "EXPIRED"
         db.commit()
         raise HTTPException(409, "This setup expired; it is no longer valid")
+    if sig.trading_mode.startswith("CRYPTO_"):
+        return _approve_crypto(db, sig, a, body, user, request)
     mode = state.get(db, "trading")["mode"]
     if mode not in trading.ORDER_MODES:
         raise HTTPException(400, "Set the trading mode to PRACTICE (paper) or BROKER DEMO first")
@@ -102,6 +104,32 @@ def approve(signal_id: int, body: DecisionIn, request: Request, user: User = Dep
           details={"symbol": sig.symbol, "side": sig.action, "volume": o.volume, "note": body.note, "order": o.client_id})
     db.commit()
     return {"status": "approved", "order": o.client_id, "order_status": o.status, "volume": o.volume}
+
+
+def _approve_crypto(db, sig, a, body, user, request):
+    from ..services.crypto import desk
+    mode = desk.pos_mode(db)
+    if mode != sig.trading_mode:
+        raise HTTPException(400, f"The setup was found in {sig.trading_mode} but crypto is now {mode or 'OFF'}")
+    q = db.get(Quote, sig.symbol)
+    if q is None or not (sig.stop_loss < q.ask < (sig.take_profit or 1e18)):
+        raise HTTPException(400, f"Price {q.ask if q else '?'} is already outside the stop-loss / take-profit range — the setup is invalid")
+    try:
+        p, checks, _ = desk.place(db, symbol=sig.symbol, sl=sig.stop_loss, tp=sig.take_profit, by=user.username,
+                                  source=sig.strategy, signal=sig, note=body.note)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if p is None:
+        failed = "; ".join(f"{c['check']} ({c.get('detail', '')})" for c in checks if not c["passed"])
+        db.commit()
+        raise HTTPException(400, f"Not placed: {failed}")
+    o = db.scalar(select(Order).where(Order.client_id == f"X{sig.id}-{mode}"))
+    sig.status = "ORDERED"
+    a.status, a.decided_by, a.decided_at, a.note, a.order_client_id = "APPROVED", user.username, utcnow(), body.note, o.client_id if o else None
+    audit(db, "setup.approved", user=user, ip=client_ip(request), entity="signal", entity_id=sig.id,
+          details={"symbol": sig.symbol, "side": "BUY", "volume": p.volume, "note": body.note})
+    db.commit()
+    return {"status": "approved", "order": o.client_id if o else None, "order_status": o.status if o else "FILLED", "volume": p.volume}
 
 
 @router.post("/setups/{signal_id}/decline")

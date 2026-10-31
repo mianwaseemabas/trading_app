@@ -207,3 +207,15 @@ def test_modify_requires_stop(conn):
     deal = conn.reports[-1][1]["ticket"]
     conn.execute(order(client_id="M2-1", action="MODIFY", stop_loss=None, position_ticket=deal))
     assert conn.reports[-1][1]["status"] == "REJECTED" and "stop-loss" in conn.reports[-1][1]["error"]
+
+
+def test_stock_market_sized_in_units(conn):
+    m = conn.load_market("AAPL")
+    assert not m.fx and m.size_unit_problem() is None
+    spec = next(x for x in conn.symbols_payload() if x["symbol"] == "AAPL") if "AAPL" in conn.markets else None
+    assert spec["trade_contract_size"] == 1 and spec["currency_base"] == "" and spec["currency_profit"] == "USD"
+    assert spec["volume_min"] == pytest.approx(0.1) and spec["volume_step"] == pytest.approx(0.1)
+    assert m.size(0.35) == pytest.approx(0.3) and m.lots(0.3) == pytest.approx(0.3)
+    # FX keeps standard lots
+    fx = conn.markets["EURUSD"]
+    assert fx.fx and next(x for x in conn.symbols_payload() if x["symbol"] == "EURUSD")["trade_contract_size"] == 100000

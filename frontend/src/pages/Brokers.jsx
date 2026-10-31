@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
-import { Badge, Card, Field, PasswordPrompt, fmt, useAction, useApi } from "../components.jsx";
+import { Badge, Card, Field, Modal, PasswordPrompt, fmt, useAction, useApi } from "../components.jsx";
 
 const FORMS = {
   capital: {
@@ -140,6 +140,80 @@ function Limits({ data, reload }) {
   );
 }
 
+const CRYPTO_MODES = [
+  { k: "OFF", label: "Off", d: "Prices and charts only" },
+  { k: "PAPER", label: "Practice", d: "Virtual USDT at real exchange prices — no keys needed" },
+  { k: "TEST", label: "Testnet / demo", d: "Real orders on the exchange's test environment" },
+  { k: "LIVE", label: "LIVE", d: "Real money — needs password and 'allow real'" },
+];
+const HOW_KEYS = {
+  binance: "Binance → Profile → API Management → Create API (system generated). Enable 'Spot & Margin Trading' only. Do NOT enable withdrawals. Restrict access to your server IP 37.60.252.21. For testnet keys use testnet.binance.vision.",
+  okx: "OKX → Profile → API → Create V5 API key. Permission: Trade only (NOT Withdraw). Bind IP 37.60.252.21. Write down the passphrase. For demo keys switch to Demo trading first, then create the key there.",
+  bybit: "Bybit → Profile → API → Create new key (system generated). Permissions: Spot trade only, no withdrawals. Restrict IP 37.60.252.21. For testnet keys use testnet.bybit.com.",
+};
+
+function CryptoCard() {
+  const { data: c, reload } = useApi("/crypto/settings", { interval: 15000 });
+  const [run, busy] = useAction();
+  const [keys, setKeys] = useState(null);
+  const [pw, setPw] = useState(null);
+  const [syms, setSyms] = useState(null);
+  const [test, setTest] = useState(null);
+  if (!c) return <Card title="Crypto exchanges"><p className="muted">Loading…</p></Card>;
+  const exch = c.exchanges.find((x) => x.name === c.exchange);
+  const setMode = (m) => {
+    if (m === "LIVE") setPw({ mode: "LIVE", allow_real: true });
+    else run(() => api.put("/crypto/settings", { mode: m }), `Crypto mode: ${m}`).then(reload).catch(() => {});
+  };
+  return (
+    <Card title="Crypto exchanges (spot)" actions={<Badge tone={c.status.market_ok ? "ok" : "warn"}>{c.status.market_ok ? "prices live" : "prices offline"}</Badge>}>
+      <p className="small muted">Buy and sell coins with USDT on Binance, OKX or Bybit. Spot only — no futures, no borrowing. Every buy gets a stop-loss order on the exchange immediately; if that fails the coins are sold again.</p>
+      <Field label="Exchange">
+        <div className="seg">{c.exchanges.map((x) => <button key={x.name} type="button" className={c.exchange === x.name ? "active" : ""}
+          onClick={() => run(() => api.put("/crypto/settings", { exchange: x.name }), `Exchange: ${x.label}`).then(reload).catch(() => {})}>{x.label}{x.has_keys ? " 🔑" : ""}</button>)}</div>
+      </Field>
+      <Field label="Mode">
+        <div className="mode-grid">{CRYPTO_MODES.map((m) => (
+          <button key={m.k} className={`mode ${c.mode === m.k ? "on" : ""} ${m.k === "LIVE" ? "danger" : ""}`} onClick={() => setMode(m.k)}>
+            <strong>{m.label}{m.k === "TEST" ? ` (${exch.test_label})` : ""}</strong><span>{m.d}</span></button>))}</div>
+      </Field>
+      <div className="row gap wrap small">
+        <span>API key: {exch.has_keys ? <b>{exch.api_key}</b> : <span className="muted">not saved</span>}</span>
+        <button className="btn sm" onClick={() => setKeys({ api_key: "", secret: "", passphrase: "", password: "" })}>{exch.has_keys ? "Replace keys" : "Add API keys"}</button>
+        {exch.has_keys && <button className="btn sm ghost" disabled={busy} onClick={() => run(() => api.post("/crypto/test-connection", { exchange: c.exchange, environment: c.mode === "LIVE" ? "LIVE" : "TEST" })).then(setTest).catch(() => {})}>Test connection</button>}
+      </div>
+      {test && <div className={`alert ${test.ok ? "ok" : "bad"} small`}>{test.ok ? `Connected. Balances: ${Object.entries(test.assets || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "empty"}` : test.error}
+        {test.warnings?.map((w) => <div key={w} className="neg"><b>⚠ {w}</b></div>)}</div>}
+      <Field label="Coins to watch / trade (USDT pairs)">
+        <div className="row gap"><input value={syms ?? c.symbols.join(", ")} onChange={(e) => setSyms(e.target.value.toUpperCase())} />
+          <button className="btn sm" disabled={syms === null} onClick={() => run(() => api.put("/crypto/settings", { symbols: syms.split(",").map((x) => x.trim()).filter(Boolean) }), "Saved").then(() => { setSyms(null); reload(); }).catch(() => {})}>Save</button></div>
+      </Field>
+      <div className="row gap wrap small">
+        <label className="check"><input type="checkbox" checked={!!c.signals} onChange={(e) => run(() => api.put("/crypto/settings", { signals: e.target.checked }), "Saved").then(reload)} /> Strategy looks for setups on crypto too (you approve each one)</label>
+        <span className="muted">Practice cash: {fmt.money(c.paper_cash)} USDT</span>
+        <button className="btn sm ghost" onClick={() => { const v = window.prompt("Reset practice account to how many USDT?", "100"); if (v) run(() => api.put("/crypto/settings", { paper_reset: Number(v) }), "Practice account reset").then(reload).catch(() => {}); }}>Reset practice</button>
+      </div>
+      {c.status.market_error && <p className="small neg">Market data: {c.status.market_error}</p>}
+      {keys && (
+        <Modal title={`${exch.label} API keys`} onClose={() => setKeys(null)}>
+          <div className="alert warn small"><b>Safety:</b> {HOW_KEYS[c.exchange]}</div>
+          <Field label="API key"><input value={keys.api_key} onChange={(e) => setKeys({ ...keys, api_key: e.target.value })} autoComplete="off" /></Field>
+          <Field label="Secret key"><input type="password" value={keys.secret} onChange={(e) => setKeys({ ...keys, secret: e.target.value })} autoComplete="off" /></Field>
+          {exch.needs_passphrase && <Field label="API passphrase"><input type="password" value={keys.passphrase} onChange={(e) => setKeys({ ...keys, passphrase: e.target.value })} autoComplete="off" /></Field>}
+          <Field label="Your app password (to confirm)"><input type="password" value={keys.password} onChange={(e) => setKeys({ ...keys, password: e.target.value })} autoComplete="current-password" /></Field>
+          <div className="row end">
+            <button className="btn ghost" onClick={() => setKeys(null)}>Cancel</button>
+            <button className="btn primary" disabled={busy} onClick={() => run(() => api.put(`/crypto/keys/${c.exchange}`, keys), "Keys saved (encrypted)").then(() => { setKeys(null); reload(); }).catch(() => {})}>Save keys</button>
+          </div>
+          <p className="tiny muted">Keys are encrypted on your server and never shown again. Testnet/demo keys and live keys are different — save the ones that match the mode you use.</p>
+        </Modal>
+      )}
+      {pw && <PasswordPrompt title="Enable LIVE crypto trading" message="Real money on the exchange. Orders still need your approval or manual ticket, and every buy gets a stop-loss at the exchange."
+        onClose={() => setPw(null)} onSubmit={(password) => run(() => api.put("/crypto/settings", { ...pw, password }), "Crypto LIVE enabled").then(() => { setPw(null); reload(); })} />}
+    </Card>
+  );
+}
+
 export default function Brokers() {
   const { data, reload } = useApi("/brokers", { interval: 5000 });
   if (!data) return <p className="muted">Loading…</p>;
@@ -153,6 +227,7 @@ export default function Brokers() {
         {["capital", "ctrader", "mt5"].map((n) => <ConnectorCard key={n} name={n} c={data.connectors[n]} active={data.active} reload={reload} />)}
         <Limits data={data} reload={reload} />
       </div>
+      <CryptoCard />
     </div>
   );
 }

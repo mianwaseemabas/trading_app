@@ -407,3 +407,17 @@ class TradeAttachment(Base):
     content_type: Mapped[str] = mapped_column(String(64))
     size: Mapped[int] = mapped_column(Integer)
     data: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class CryptoLink(Base):
+    """Exchange-side protection (stop-loss / OCO) attached to a crypto position."""
+
+    __tablename__ = "crypto_links"
+
+    position_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    exchange: Mapped[str] = mapped_column(String(16))
+    environment: Mapped[str] = mapped_column(String(16))
+    prot_ids: Mapped[list] = mapped_column(JSON, default=list)
+    prot_kind: Mapped[str] = mapped_column(String(16), default="")
+    exchange_tp: Mapped[bool] = mapped_column(Boolean, default=False)
+    buy_order_id: Mapped[str] = mapped_column(String(64), default="")

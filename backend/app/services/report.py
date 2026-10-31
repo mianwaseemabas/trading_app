@@ -140,8 +140,12 @@ def setup_report(db: Session, sig: Signal) -> dict:
     # Current risk check at today's price (what would happen if approved now)
     risk = None
     try:
-        rc = trading.build_context(db, symbol=sig.symbol, side=side, tf=sig.timeframe, sl=sl, tp=tp,
-                                   mode=state.get(db, "trading")["mode"] if state.get(db, "trading")["mode"] in trading.ORDER_MODES else "PAPER")
+        if (sig.trading_mode or "").startswith("CRYPTO_"):
+            from .crypto import desk
+            rc = desk.build_context(db, sig.symbol, side, sl, tp, desk.pos_mode(db) or "CRYPTO_PAPER")
+        else:
+            rc = trading.build_context(db, symbol=sig.symbol, side=side, tf=sig.timeframe, sl=sl, tp=tp,
+                                       mode=state.get(db, "trading")["mode"] if state.get(db, "trading")["mode"] in trading.ORDER_MODES else "PAPER")
         d = evaluate(rc)
         risk = {"approved": d.approved, "volume": d.volume, "risk_amount": d.risk_amount, "risk_budget": d.risk_budget,
                 "entry_now": d.entry_price, "failed": [c for c in d.checks if not c["passed"]], **trading.potential_outcomes(d, rc)}

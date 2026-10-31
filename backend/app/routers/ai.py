@@ -20,7 +20,7 @@ from .. import state
 from ..audit import audit
 from ..db import get_db
 from ..deps import client_ip, require
-from ..models import BacktestRun, Signal, User
+from ..models import BacktestRun, Position, Signal, User
 from ..secretbox import decrypt, encrypt
 from ..security import verify_password
 from ..services import trading
@@ -76,6 +76,11 @@ def _context(db: Session) -> str:
                             "failed_risk_checks": [c["check"] for c in (s.risk_checks or []) if not c.get("passed")],
                             "features": {k: v for k, v in (s.features or {}).items() if k in ("rsi", "ema_fast", "ema_slow", "macd_hist", "atr")}}
                            for s in sigs],
+        "crypto": (lambda c: {"mode": c["mode"], "exchange": c["exchange"], "coins": c["symbols"], "spot_only": True,
+                              "open_positions": [{"symbol": p.symbol, "qty": p.volume, "open": p.open_price, "sl": p.stop_loss,
+                                                  "tp": p.take_profit, "unrealized_pnl": p.unrealized_pnl}
+                                                 for p in db.scalars(select(Position).where(Position.mode.like("CRYPTO_%"),
+                                                                                            Position.status == "OPEN")).all()]})(state.get(db, "crypto")),
         "last_backtest": ({"market": f"{last_bt.params.get('symbol')} {last_bt.params.get('timeframe')}",
                            "all": (last_bt.metrics or {}).get("all"), "out_of_sample": (last_bt.metrics or {}).get("out_of_sample"),
                            "warnings": (last_bt.metrics or {}).get("warnings"), "risk_rejections": (last_bt.metrics or {}).get("risk_rejections")}
