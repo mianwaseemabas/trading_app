@@ -102,3 +102,30 @@ def test_seconds_chart_from_ticks(c):
     x = r["candles"][-2]
     assert x["high"] >= max(x["open"], x["close"]) and x["low"] <= min(x["open"], x["close"])
     assert c.get("/api/intel/candles?symbol=EURUSD&tf=X9").status_code == 400
+
+
+def test_push_subscribe_send_and_cleanup(c):
+    import urllib.error
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from app.models import PushSubscription
+    from app.services import webpush
+    k = c.get("/api/push/key").json()
+    assert len(webpush.unb64u(k["public_key"])) == 65 and k["devices"] == 0
+    ua = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    sub = {"endpoint": "https://push.example.test/abc", "keys": {"p256dh": webpush.b64u(ua), "auth": webpush.b64u(b"x" * 16)}}
+    assert c.post("/api/push/subscribe", json=sub).status_code == 200
+    assert c.post("/api/push/subscribe", json={**sub, "endpoint": "http://bad"}).status_code == 400
+    db = SessionLocal()
+    seen = []
+    assert webpush.send(db, "t", "b", http=lambda req: seen.append(req.headers) or 201) == (1, 0)
+    assert seen[0]["Content-encoding"] == "aes128gcm" and seen[0]["Authorization"].startswith("vapid t=")
+
+    def gone(req):
+        raise urllib.error.HTTPError(req.full_url, 410, "gone", None, None)
+    assert webpush.send(db, "t", "b", http=gone) == (0, 1)
+    db.commit()
+    assert db.query(PushSubscription).count() == 0
+    db.close()

@@ -171,10 +171,10 @@ function TopBar({ user, logout, onMenu }) {
     <header className="topbar">
       <div className="row gap tb-left">
         <button className="hamb" onClick={onMenu} aria-label="Menu">☰</button>
-        {tr && <Badge tone={modeTone(tr.mode)}>Mode: {modeLabel(tr.mode)}</Badge>}
+        {tr && <Badge tone={modeTone(tr.mode)}><span className="mode-long">Mode: {modeLabel(tr.mode)}</span><span className="mode-short">{modeLabel(tr.mode).split(" ")[0]}</span></Badge>}
         {tr?.kill_switch && <Badge tone="bad">KILL SWITCH ON</Badge>}
         {tr?.locked && <Badge tone="bad" title={tr.lock_reason}>LOCKED</Badge>}
-        {data?.data?.source === "simulator" && <Badge tone="warn" title="Synthetic data for testing only">SIMULATED DATA</Badge>}
+        {data?.data?.source === "simulator" && <Badge tone="warn" title="Synthetic data for testing only"><span className="mode-long">SIMULATED DATA</span><span className="mode-short">SIM</span></Badge>}
         {data && data.reconciliation && !data.reconciliation.ok && <Badge tone="bad" title={data.reconciliation.detail}>RECONCILIATION</Badge>}
       </div>
       <div className="row gap">

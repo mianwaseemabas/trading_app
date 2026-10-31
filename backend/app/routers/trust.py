@@ -91,7 +91,7 @@ class PrefsIn(BaseModel):
 def put_prefs(body: PrefsIn, request: Request, user: User = Depends(require("system.settings")), db: Session = Depends(get_db)):
     p = state.get_locked(db, "alert_prefs")
     if body.channels is not None:
-        p["channels"] = {ch: [t for t in v if t in al.TYPES] for ch, v in body.channels.items() if ch in ("telegram", "email")}
+        p["channels"] = {ch: [t for t in v if t in al.TYPES] for ch, v in body.channels.items() if ch in ("telegram", "email", "push")}
     tg = p.setdefault("telegram", {})
     if body.telegram_token:
         tg["bot_token_enc"] = encrypt(body.telegram_token.strip())
@@ -153,6 +153,11 @@ class TestIn(BaseModel):
 @router.post("/alerts/test")
 def test_channel(body: TestIn, user: User = Depends(require("system.settings")), db: Session = Depends(get_db)):
     text = f"Qivynex test alert from {user.username} — delivery works. Alerts are information only, never orders."
+    if body.channel == "push":
+        from ..services import webpush
+        n_ok, n_bad = webpush.send(db, "Qivynex test", text, "#/alerts", user_id=user.id)
+        db.commit()
+        return {"ok": n_ok > 0, "detail": f"{n_ok} device(s) reached, {n_bad} failed" if n_ok + n_bad else "No phone registered — press 'Turn on phone notifications' first"}
     ok, detail = al._telegram(db, text) if body.channel == "telegram" else al._email(db, "Qivynex test alert", text)
     return {"ok": ok, "detail": detail}
 

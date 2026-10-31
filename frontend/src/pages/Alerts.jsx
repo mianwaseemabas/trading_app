@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { Badge, Card, Field, fmt, useAction, useApi } from "../components.jsx";
+import { canInstall, disablePush, enablePush, isIOS, isStandalone, onInstallChange, promptInstall, pushState } from "../pwa.js";
 
 const SEV = { info: "info", warning: "warn", critical: "bad" };
 
@@ -31,10 +32,10 @@ function Preferences() {
       <p className="small muted">Every alert always appears here in the app. Choose which ones are also sent to Telegram or email. Alerts never place orders themselves; orders come only from your auto-trade switches (Strategy lab page).</p>
       <div className="tbl-wrap">
         <table className="tbl">
-          <thead><tr><th>Alert</th><th>Telegram</th><th>Email</th></tr></thead>
+          <thead><tr><th>Alert</th><th>Telegram</th><th>Email</th><th>Phone app</th></tr></thead>
           <tbody>{Object.entries(data.types).map(([t, d]) => (
             <tr key={t}><td><b className="small">{t.replace(/_/g, " ")}</b><div className="tiny muted">{d}</div></td>
-              {["telegram", "email"].map((c) => <td key={c}><input type="checkbox" disabled={!editable} checked={(ch[c] || []).includes(t)} onChange={() => toggle(c, t)} /></td>)}</tr>
+              {["telegram", "email", "push"].map((c) => <td key={c}><input type="checkbox" disabled={!editable} checked={(ch[c] || []).includes(t)} onChange={() => toggle(c, t)} /></td>)}</tr>
           ))}</tbody>
         </table>
       </div>
@@ -78,8 +79,40 @@ function Preferences() {
           {editable && <button className="btn sm" onClick={() => run(() => api.post("/alerts/test", { channel: "email" })).then(setTest).catch(() => {})}>Send test</button>}
         </div>
       </div>
+      <PhoneApp editable={editable} onTest={() => run(() => api.post("/alerts/test", { channel: "push" })).then(setTest).catch(() => {})} />
       {test && <div className={`alert ${test.ok ? "ok" : "bad"} small`}>{test.ok ? "Delivered." : `Not delivered: ${test.detail}`}</div>}
     </Card>
+  );
+}
+
+export function PhoneApp({ editable, onTest }) {
+  const [st, setSt] = useState("…");
+  const [, force] = useState(0);
+  const [run, busy] = useAction();
+  useEffect(() => { pushState().then(setSt); return onInstallChange(() => force((x) => x + 1)); }, []);
+  return (
+    <div className="phone-app">
+      <h4>Phone app &amp; notifications</h4>
+      <div className="grid two">
+        <div className="small">
+          <b>1. Install the app</b>
+          {isStandalone() ? <p className="pos">✓ You are using the installed app.</p>
+            : canInstall() ? <p><button className="btn primary sm" onClick={() => promptInstall()}>Install Qivynex on this device</button></p>
+              : isIOS() ? <p className="muted">iPhone: open this site in <b>Safari</b> → tap <b>Share</b> → <b>Add to Home Screen</b>. Then open Qivynex from the new icon.</p>
+                : <p className="muted">Android (Chrome): menu ⋮ → <b>Install app</b> / <b>Add to Home screen</b>. Desktop Chrome/Edge: the install icon in the address bar.</p>}
+        </div>
+        <div className="small">
+          <b>2. Notifications on this device</b> <Badge tone={st === "on" ? "good" : st === "blocked" ? "bad" : "muted"}>{st}</Badge>
+          <p className="muted">Then tick the <b>Phone app</b> column above for the alerts you want, and Save.</p>
+          {editable && <div className="row gap wrap">
+            {st !== "on"
+              ? <button className="btn primary sm" disabled={busy} onClick={() => run(() => enablePush(), "Phone notifications on").then(() => pushState().then(setSt)).catch(() => {})}>Turn on phone notifications</button>
+              : <button className="btn sm" disabled={busy} onClick={() => run(() => disablePush(), "Turned off on this device").then(() => pushState().then(setSt))}>Turn off on this device</button>}
+            <button className="btn sm" onClick={onTest}>Send test</button>
+          </div>}
+        </div>
+      </div>
+    </div>
   );
 }
 

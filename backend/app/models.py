@@ -560,3 +560,19 @@ class AcademyProgress(Base):
     quiz_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+
+
+class PushSubscription(Base):
+    """A phone/browser that accepts Web Push notifications."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    endpoint: Mapped[str] = mapped_column(String(800), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(200))
+    auth: Mapped[str] = mapped_column(String(100))
+    device: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    last_ok: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    fails: Mapped[int] = mapped_column(Integer, default=0)

@@ -486,3 +486,27 @@ ol.steps li { display: list-item; list-style: decimal; border: 0; padding: 0; }
   .ts-row { gap: 12px; }
   .big-px { font-size: 22px; }
 }
+/* ---- mobile review fixes ---- */
+.card-h > .row { flex-wrap: wrap; justify-content: flex-end; }
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.tab { white-space: nowrap; flex-shrink: 0; }
+.mode-short { display: none; }
+@media (max-width: 860px) {
+  .card-h { align-items: flex-start; padding: 10px 12px; }
+  .card-h > h3 { flex: 1 1 160px; }
+  .card-b { padding: 12px; }
+  .trust-cards { grid-template-columns: 1fr; }
+  .mode-long { display: none; }
+  .mode-short { display: inline; }
+  .tb-left .badge { white-space: nowrap; }
+  .term-top { display: grid; grid-template-columns: 1fr; }
+  .ts-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; }
+  .ts-cell b { font-size: 13px; }
+  .kv { grid-template-columns: 1fr; }
+  .grid.stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tbl-wrap, table.tbl { background: linear-gradient(to left, rgba(0,0,0,.25), transparent 24px) right / 24px 100% no-repeat; }
+  .tbl td, .tbl th { white-space: nowrap; }
+  .tbl td.wrap { white-space: normal; min-width: 220px; }
+  .modal-wrap, .modal-bg { align-items: flex-end; }
+}
+.phone-app { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 4px; }

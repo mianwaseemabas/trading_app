@@ -1,6 +1,6 @@
 // Production build: bundles src/main.jsx -> dist/assets/app.js (+ app.css) and copies index.html.
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
 mkdirSync("dist/assets", { recursive: true });
@@ -18,4 +18,7 @@ await esbuild.build({
   legalComments: "none",
   logLevel: "info",
 });
-copyFileSync("index.html", "dist/index.html");
+import { readFileSync, writeFileSync } from "node:fs";
+const v = Date.now().toString(36);
+writeFileSync("dist/index.html", readFileSync("index.html", "utf8").replace(/\/assets\/app\.(js|css)/g, (m) => `${m}?v=${v}`));
+if (existsSync("public")) cpSync("public", "dist", { recursive: true });

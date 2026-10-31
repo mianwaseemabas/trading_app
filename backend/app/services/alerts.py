@@ -143,6 +143,15 @@ def _telegram(db: Session, text: str) -> tuple[bool, str]:
         return False, str(e)[:300]
 
 
+def _push(db: Session, a) -> tuple[bool, str]:
+    from . import webpush
+    from ..models import PushSubscription
+    if not db.scalar(select(PushSubscription.id).limit(1)):
+        return False, "Phone notifications not configured"
+    n_ok, n_bad = webpush.send(db, a.title, a.body[:300], a.link or "#/alerts")
+    return n_ok > 0, f"{n_ok} sent, {n_bad} failed"
+
+
 def _email(db: Session, subject: str, text: str) -> tuple[bool, str]:
     from ..secretbox import decrypt
     e = prefs(db).get("email", {})
@@ -170,7 +179,7 @@ def deliver_pending(db: Session, limit: int = 20) -> None:
     alerts = db.scalars(select(Alert).where(Alert.at >= since).order_by(Alert.id).limit(500)).all()
     sent = 0
     for a in alerts:
-        for ch in ("telegram", "email"):
+        for ch in ("telegram", "email", "push"):
             if a.type not in p.get("channels", {}).get(ch, []):
                 continue
             prev = db.scalar(select(AlertDelivery).where(AlertDelivery.alert_id == a.id, AlertDelivery.channel == ch))
@@ -179,7 +188,10 @@ def deliver_pending(db: Session, limit: int = 20) -> None:
             if prev and (utcnow() - prev.at).total_seconds() < 60 * prev.attempts:
                 continue
             text = f"{a.title}\n{a.body}".strip()
-            ok, detail = _telegram(db, text) if ch == "telegram" else _email(db, a.title, text)
+            if ch == "push":
+                ok, detail = _push(db, a)
+            else:
+                ok, detail = _telegram(db, text) if ch == "telegram" else _email(db, a.title, text)
             status = "sent" if ok else ("skipped" if "not configured" in detail else "failed")
             if prev:
                 prev.status, prev.detail, prev.attempts, prev.at = status, detail, prev.attempts + 1, utcnow()

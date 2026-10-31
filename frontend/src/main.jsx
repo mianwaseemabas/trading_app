@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import { ToastProvider } from "./components.jsx";
 import "./styles.css";
+import { registerPWA } from "./pwa.js";
+
+registerPWA();
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>

@@ -3,6 +3,7 @@ WORKDIR /src
 COPY package.json ./
 RUN npm install --no-audit --no-fund
 COPY build.mjs index.html ./
+COPY public ./public
 COPY src ./src
 RUN npm run build
 
