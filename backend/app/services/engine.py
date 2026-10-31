@@ -157,12 +157,12 @@ def every(name: str, seconds: float) -> bool:
 
 def research_jobs(db: Session) -> None:
     """Data incidents, SMC event log, shadow outcomes, scheduled alerts and alert delivery (fail-safe)."""
-    from . import ai_jobs, alerts, assess, chart, drawings, headlines, health, news_trading, quality, race, tadawul
+    from . import ai_jobs, alerts, assess, chart, drawings, headlines, health, news_trading, opportunities, quality, race, tadawul
     jobs = [("incidents", 30, quality.track_incidents), ("smc_log", 120, log_all_smc), ("outcomes", 60, assess.track_outcomes),
             ("scheduled", 60, alerts.scheduled), ("headlines", 60, headlines.refresh), ("reconcile", 300, reconcile_paper), ("deliver", 5, alerts.deliver_pending),
             ("ticks", 600, chart.prune_ticks), ("ai_jobs", 60, ai_jobs.scheduled), ("health", 60, health.monitor),
             ("heartbeat", 20, health.heartbeat), ("race", 60, race.run), ("drawings", 10, drawings.check), ("tadawul", 60, tadawul.refresh),
-            ("news_ai", 180, news_trading.classify)]
+            ("news_ai", 180, news_trading.classify), ("opportunities", 300, opportunities.job)]
     for name, sec, fn in jobs:
         if not every(name, sec):
             continue

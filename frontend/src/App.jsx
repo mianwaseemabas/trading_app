@@ -26,15 +26,17 @@ import Academy from "./pages/Academy.jsx";
 import Charts from "./pages/Charts.jsx";
 import Tour from "./components/Tour.jsx";
 import Tools from "./pages/Tools.jsx";
+import Opportunities from "./pages/Opportunities.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
   { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true, sec: "Trade", tab: true },
+  { k: "opps", label: "Opportunities", icon: "🎯", perm: "signals.view", el: Opportunities, sec: "Trade", tab: true },
   { k: "charts", label: "Multi-chart", icon: "▦", perm: "market.view", el: Charts, sec: "Trade" },
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard, sec: "Trade" },
-  { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live, sec: "Trade", tab: true },
+  { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live, sec: "Trade" },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups, sec: "Trade" },
   { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts, sec: "Trade", tab: true },
   { k: "academy", label: "Academy (learn)", icon: "🎓", perm: "dashboard.view", el: Academy, sec: "Learn", tab: true },

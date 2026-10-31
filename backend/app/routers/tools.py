@@ -161,3 +161,81 @@ def size(body: SizeIn, user: User = Depends(require("market.view")), db: Session
     if vol < (inst.volume_min or 0):
         out["warning"] = f"Your risk is too small for the minimum size {inst.volume_min}: that would risk {inst.volume_min * dist * vpu:.2f}."
     return out
+
+
+# ------------------------------------------------------------------ opportunity ranking
+_scan_at: dict = {}
+
+
+@router.get("/opportunities")
+def get_opps(user: User = Depends(require("signals.view")), db: Session = Depends(get_db)):
+    from ..services import opportunities as op
+    st = state.get(db, "opportunities")
+    return {**{k: v for k, v in st.items() if k != "ts"}, "config": op.cfg(db),
+            "note": "Score = quality of evidence, not a chance of winning. Money figures use the risk engine's size for your account "
+                    "and include spread, commission and a slippage allowance."}
+
+
+@router.post("/opportunities/scan")
+def scan_opps(user: User = Depends(require("signals.view")), db: Session = Depends(get_db)):
+    import time as _t
+
+    from ..services import opportunities as op
+    if _t.time() - _scan_at.get(user.id, 0) < 30:
+        raise HTTPException(429, "A scan just ran — wait 30 seconds")
+    _scan_at[user.id] = _t.time()
+    op.scan(db, force=True)
+    db.commit()
+    return get_opps(user, db)
+
+
+@router.post("/opportunities/{key}/queue")
+def queue_opp(key: str, request: Request, user: User = Depends(require("trading.manual")), db: Session = Depends(get_db)):
+    from ..services import opportunities as op
+    res = op.queue(db, key, by=user.username)
+    audit(db, "opportunity.queued", user=user, ip=client_ip(request), details={"key": key, **{k: v for k, v in res.items() if k != "detail"}})
+    db.commit()
+    return res
+
+
+class OppCfgIn(BaseModel):
+    auto_proven: bool
+
+
+@router.put("/opportunities/config")
+def opp_cfg(body: OppCfgIn, request: Request, user: User = Depends(require("trading.control")), db: Session = Depends(get_db)):
+    c = state.get_locked(db, "opportunity_cfg")
+    c["auto_proven"] = body.auto_proven
+    state.put(db, "opportunity_cfg", c, by=user.username)
+    audit(db, "opportunity.config", user=user, ip=client_ip(request), details=c)
+    db.commit()
+    return get_opps(user, db)
+
+
+class ExplainIn(BaseModel):
+    key: str = Field(max_length=20)
+
+
+@router.post("/opportunities/explain")
+def explain_opp(body: ExplainIn, user: User = Depends(require("ai.use")), db: Session = Depends(get_db)):
+    """AI signal analyst: supporting, missing and conflicting evidence for one ranked setup (never a trade instruction)."""
+    import json as _json
+    import time as _t
+
+    from ..secretbox import decrypt
+    from .ai import _call
+    item = next((x for x in state.get(db, "opportunities").get("items", []) if x["key"] == body.key), None)
+    if not item:
+        raise HTTPException(404, "Opportunity not found — scan again")
+    ai = state.get(db, "ai")
+    if not ai.get("enabled") or not ai.get("api_key_enc"):
+        raise HTTPException(400, "Turn on the AI assistant first (AI Assistant page)")
+    if _t.time() - _scan_at.get(("x", user.id), 0) < 5:
+        raise HTTPException(429, "Please wait a few seconds")
+    _scan_at[("x", user.id)] = _t.time()
+    prompt = ("You are the signal analyst in the Qivynex trading app. Review this ranked setup for a beginner using exactly these headings: "
+              "SUPPORTING EVIDENCE, MISSING EVIDENCE, CONFLICTING EVIDENCE, COSTS & RISK (use the money numbers), WHAT WOULD MAKE IT INVALID. "
+              "Then one line 'Bottom line:' that says whether the evidence is strong, mixed or weak — never tell the user to buy or sell, "
+              "never predict price, remind that score is not a win probability. Max 220 words.\n\nSETUP (JSON):\n" + _json.dumps(item, default=str)[:9000])
+    text = _call(ai["provider"], ai["model"], decrypt(ai["api_key_enc"]), "You explain trading evidence honestly and briefly.", [{"role": "user", "content": prompt}])
+    return {"key": body.key, "analysis": text}

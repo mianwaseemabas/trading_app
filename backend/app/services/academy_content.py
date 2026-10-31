@@ -617,6 +617,22 @@ COURSES = [
                           "answer": 1, "why": "Expectancy is negative; no position size can fix that."}],
             },
             {
+                "id": "pow-opps", "title": "Opportunity ranking: which setups are actionable", "minutes": 5,
+                "goal": "Read a signal card and decide in one minute.",
+                "explain": "A pattern (a sweep, a breakout) is not a trade. The Opportunities page checks every strategy on every market and asks: is the data clean, "
+                           "do trend, structure and momentum agree, is the spread normal, does the stop fit my risk budget, is news in the way? "
+                           "Each card shows the score, entry/stop/target, money at stake after costs, the evidence (✓ ! ✕) and the strategy's measured history. "
+                           "TRADE CANDIDATE means all checks pass — it still follows your approval or auto-trade rules.",
+                "steps": [
+                    {"text": "Open Opportunities and press Scan now.", L: "#/opps"},
+                    {"text": "On one card read: score, 'Planned loss (incl. costs)', 'must win ≥ …% to break even' and every ✕ line."},
+                    {"text": "Press 🤖 Explain evidence to see what is supporting, missing and conflicting."},
+                    {"text": "Switch to 'Rejected (why)' — learning why setups fail is as useful as the candidates."},
+                ],
+                "quiz": [{"q": "A card shows a liquidity sweep ✓ but 'risk engine — risk amount above budget' ✕. Decision?", "options": ["Trade it anyway", "Rejected — the setup doesn't fit your risk budget"],
+                          "answer": 1, "why": "A good pattern with a stop too wide for your budget is not actionable."}],
+            },
+            {
                 "id": "pow-markets", "title": "Gold, oil, indices and Saudi stocks", "minutes": 5,
                 "goal": "Add more markets safely and know which ones are watch-only.",
                 "explain": "Gold, oil and indices trade through your forex broker (names differ per broker) and move more than currencies — use smaller risk at first. "

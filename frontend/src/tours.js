@@ -23,6 +23,7 @@ export const TOURS = {
   start: { title: "Welcome tour", steps: [
     { route: "academy", sel: ".academy-hero", title: "Academy", text: "Short lessons, one step at a time. Your streak and setup checklist are here." },
     { route: "terminal", sel: ".zchart", title: "Terminal", text: "Your cockpit: chart, watchlist and order ticket." },
+    { route: "opps", sel: ".sig-grid, .seg", title: "Opportunities", text: "Ranked setups with score, money at stake after costs and the evidence for and against." },
     { route: "charts", sel: ".multi-grid", title: "Multi-chart", text: "The same market on several timeframes at once." },
     { route: "alerts", sel: ".alert-list", title: "Alerts", text: "Everything important — also sent to Telegram, email or your phone." },
     { route: "lab", sel: ".auto-grid", title: "Auto-trade", text: "Decide which practice accounts may trade without asking you." },
@@ -33,6 +34,6 @@ export const TOURS = {
 // lesson id -> tour that shows it in the app
 export const LESSON_TOUR = { "start-tour": "start", "read-terminal": "terminal", "basics-candles": "terminal", "prac-first": "terminal",
   "auto-alerts": "alerts", "auto-switch": "lab", "strat-lab": "lab", "strat-winrate": "lab", "pow-phone": "alerts", "pow-bot": "alerts",
-  "pow-lines": "terminal", "pow-tools": "start" };
+  "pow-lines": "terminal", "pow-tools": "start", "pow-opps": "start" };
 
 export const startTour = (id) => window.dispatchEvent(new CustomEvent("q-tour", { detail: id }));
