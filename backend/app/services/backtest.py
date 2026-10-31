@@ -64,6 +64,10 @@ def metrics(trades: list[dict], initial: float) -> dict:
         "return_pct": round(sum(pnl) / initial * 100, 2),
         "expectancy": round(sum(pnl) / n, 3),
         "avg_r": round(sum(rs) / len(rs), 3) if rs else None,
+        "avg_r_ci95": (lambda m, sd: [round(m - 1.96 * sd / len(rs) ** 0.5, 3), round(m + 1.96 * sd / len(rs) ** 0.5, 3)])(
+            sum(rs) / len(rs), (sum((r - sum(rs) / len(rs)) ** 2 for r in rs) / (len(rs) - 1)) ** 0.5) if len(rs) > 1 else None,
+        "avg_win": round(gp / len(wins), 2) if wins else None,
+        "avg_loss": round(gl / len(losses_), 2) if losses_ else None,
         "max_drawdown": round(max_dd, 2),
         "max_drawdown_pct": round(max_dd_pct, 2),
         "longest_losing_streak": longest,

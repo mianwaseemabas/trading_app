@@ -177,7 +177,9 @@ def build_context(db: Session, symbol: str, side: str, sl: float | None, tp: flo
     if mode != "CRYPTO_PAPER":
         extra.append(("exchange keys connected", has_keys(db, c["exchange"]) and meta.get("error") is None, meta.get("error", "")))
     if mode == "CRYPTO_LIVE":
+        from ..livegate import is_approved
         extra.append(("real-money crypto allowed (Brokers page)", bool(c.get("allow_real")), ""))
+        extra.append(("live gate approved and not expired", is_approved(db), "real money needs a current live-gate approval"))
     positions = [OpenPos(p.symbol, p.side, p.unrealized_pnl or 0) for p in open_positions(db, mode)]
     spec = trading.spec_of(inst) if inst else None
     if spec is None:
@@ -190,7 +192,7 @@ def build_context(db: Session, symbol: str, side: str, sl: float | None, tp: flo
         lock_reason=tr["lock_reason"], mode=mode, day_loss=day_loss, week_loss=week_loss,
         day_anchor_equity=anchor["day_equity"], week_anchor_equity=anchor["week_equity"], stale_quote_seconds=60,
         data_ok=fresh, data_detail="" if fresh else f"no recent {tf} candle", profit_to_account_rate=1.0,
-        base_to_account_rate=None, duplicate=duplicate, extra_checks=extra,
+        base_to_account_rate=None, duplicate=duplicate, extra_checks=extra, trades_today=trading.trades_today(db, mode),
     )
 
 
@@ -290,7 +292,9 @@ def place(db: Session, *, symbol: str, sl: float, tp: float | None, sizing_mode:
                 _close_position(db, p, sold.avg_price, "protection_failed", sold.fee_quote)
             except Exception as e2:
                 event(db, "crypto", f"URGENT: {symbol} bought without stop-loss and emergency sell failed: {e2}", "ERROR")
-                notify(f"🚨 {symbol}: bought without a stop-loss and the emergency sell failed. Check the exchange NOW. {e2}")
+                from ..alerts import raise_alert
+                raise_alert(db, "PROTECTION_FAILURE", f"URGENT {symbol}: no stop-loss and emergency sell failed",
+                            f"Check {c['exchange']} NOW and sell manually. {e2}", severity="critical", dedup=f"prot:{o.client_id}")
                 db.add(CryptoLink(position_id=p.id, exchange=c["exchange"], environment=mode, prot_ids=[], prot_kind="none", exchange_tp=False))
     audit(db, "order.filled", entity="order", entity_id=o.client_id,
           details={"mode": mode, "symbol": symbol, "side": "BUY", "volume": o.filled_volume, "price": o.fill_price, "sl": sl, "tp": tp})
@@ -433,16 +437,15 @@ def evaluate_signals(db: Session) -> None:
                 sig.reasons = list(sig.reasons) + [{"check": "spot account cannot sell short" if res.action == "SELL" else "crypto trading OFF",
                                                     "passed": False}]
                 continue
-            d = evaluate(build_context(db, sym, "BUY", res.stop_loss, res.take_profit, mode))
+            from .. import assess
+            ctx = build_context(db, sym, "BUY", res.stop_loss, res.take_profit, mode)
+            d = evaluate(ctx)
             sig.risk_checks = d.checks
-            if not d.approved:
-                sig.status = "REJECTED"
+            outcome, _a = assess.route(db, sig, d, ctx)
+            if outcome != "QUALIFIED":
                 continue
-            sig.status = "AWAITING"
             controls = state.get(db, "controls")
-            db.add(SignalApproval(signal_id=sig.id, expires_at=utcnow() + timedelta(minutes=int(controls.get("approval_minutes", 60))),
-                                  snapshot={k: v for k, v in d.to_dict().items() if k != "checks"}))
-            notify(f"🟡 Crypto setup BUY {sym} {tf} waiting for approval", True)
+            assess.request_approval(db, sig, d, int(controls.get("approval_minutes", 60)))
 
 
 def tick(db: Session) -> None:

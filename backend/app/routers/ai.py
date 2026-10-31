@@ -20,7 +20,7 @@ from .. import state
 from ..audit import audit
 from ..db import get_db
 from ..deps import client_ip, require
-from ..models import BacktestRun, Position, Signal, User
+from ..models import BacktestRun, Position, Signal, User, utcnow
 from ..secretbox import decrypt, encrypt
 from ..security import verify_password
 from ..services import trading
@@ -114,7 +114,7 @@ def _call(provider: str, model: str, key: str, system: str, messages: list[dict]
 def get_settings(user: User = Depends(require("ai.use")), db: Session = Depends(get_db)):
     ai = state.get(db, "ai")
     return {"provider": ai["provider"], "model": ai["model"], "enabled": ai["enabled"], "share_data": ai["share_data"],
-            "api_key_set": bool(ai.get("api_key_enc")), "providers": PROVIDERS}
+            "api_key_set": bool(ai.get("api_key_enc")), "providers": PROVIDERS, "last_test": ai.get("last_test")}
 
 
 class AISettingsIn(BaseModel):
@@ -177,3 +177,23 @@ def chat(body: ChatIn, request: Request, user: User = Depends(require("ai.use"))
     audit(db, "ai.question", user=user, ip=client_ip(request), details={"chars": len(msgs[-1]["content"])})
     db.commit()
     return {"reply": reply}
+
+
+@router.post("/test")
+def test_ai(request: Request, user: User = Depends(require("system.settings")), db: Session = Depends(get_db)):
+    """Check that the configured provider + model actually answer (the model name is not assumed valid)."""
+    ai = state.get(db, "ai")
+    if not ai.get("api_key_enc"):
+        raise HTTPException(400, "Save an API key first")
+    t0 = time.time()
+    try:
+        reply = _call(ai["provider"], ai["model"], decrypt(ai["api_key_enc"]), "Reply with exactly: OK", [{"role": "user", "content": "ping"}])
+        res = {"ok": True, "model": ai["model"], "provider": ai["provider"], "latency_ms": round((time.time() - t0) * 1000), "reply": reply[:80]}
+    except HTTPException as e:
+        res = {"ok": False, "model": ai["model"], "provider": ai["provider"], "error": str(e.detail)[:300]}
+    ai2 = state.get_locked(db, "ai")
+    ai2["last_test"] = {**res, "at": utcnow().isoformat()}
+    state.put(db, "ai", ai2, by=user.username)
+    audit(db, "ai.test", user=user, ip=client_ip(request), details={k: v for k, v in res.items() if k != "reply"})
+    db.commit()
+    return res

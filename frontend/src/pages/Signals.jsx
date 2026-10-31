@@ -1,6 +1,8 @@
 import React, { useState } from "react";
+import { Tabs } from "../components.jsx";
 import { Badge, Card, Modal, Table, digitsFor, fmt, statusTone, useApi } from "../components.jsx";
 import { SetupReport } from "./Setups.jsx";
+import { AssessmentPanel, VERDICT } from "./Assessment.jsx";
 
 function CheckList({ items }) {
   if (!items || !items.length) return <p className="muted">None</p>;
@@ -27,6 +29,7 @@ export function SignalDetail({ id, onClose }) {
             <span>{s.symbol} {s.timeframe} · candle {fmt.dt(s.candle_time)} · {s.strategy} v{s.strategy_version} · mode {s.trading_mode}</span>
             <a className="btn sm ghost" href={`#/assistant?q=${encodeURIComponent(`Explain signal #${s.id}: ${s.symbol} ${s.timeframe} ${s.action}, status ${s.status}. Conditions: ${JSON.stringify(s.reasons)}. Risk checks: ${JSON.stringify((s.risk_checks || []).filter((c) => !c.passed))}. Explain in simple words what happened and what I can learn.`)}`} onClick={onClose}>✦ Ask AI to explain</a>
           </div>
+          {s.action !== "NONE" && <AssessmentPanel signalId={s.id} />}
           {s.action !== "NONE" && (
             <div className="grid stats">
               <div className="stat"><div className="stat-l">Entry ref</div><div className="stat-v">{fmt.px(s.entry_ref, digitsFor(s.symbol))}</div></div>
@@ -61,39 +64,51 @@ export function SignalDetail({ id, onClose }) {
   );
 }
 
+const TABS = [["all", "All"], ["qualified", "Qualified"], ["watch", "Watch"], ["rejected", "Rejected / no trade"], ["expired", "Expired"], ["completed", "Completed"]];
+
 export default function Signals() {
-  const [actionable, setActionable] = useState(true);
-  const [status, setStatus] = useState("");
-  const { data } = useApi(`/signals?limit=300${actionable ? "&actionable=true" : ""}${status ? `&status=${status}` : ""}`, { interval: 30000, deps: [actionable, status] });
+  const [tab, setTab] = useState("all");
+  const [raw, setRaw] = useState(false);
+  const { data } = useApi(`/signal-board?tab=${tab}`, { interval: 30000, deps: [tab] });
+  const { data: rawData } = useApi(raw ? "/signals?limit=300" : null, { interval: 30000, deps: [raw] });
   const [open, setOpen] = useState(null);
   const [review, setReview] = useState(null);
+  const today = data?.today || {};
   return (
-    <Card title="Signal log" actions={
-      <>
-        <label className="check"><input type="checkbox" checked={actionable} onChange={(e) => setActionable(e.target.checked)} /> BUY/SELL only</label>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Any status</option>
-          {["AWAITING", "ORDERED", "DECLINED", "EXPIRED", "REJECTED", "SIGNAL_ONLY", "NO_TRADE"].map((s) => <option key={s}>{s}</option>)}
-        </select>
-      </>
-    }>
-      <p className="muted small">Every evaluated closed candle is recorded with its inputs, the strategy conditions and the risk-engine checks. Click a row for details.</p>
-      <Table rows={data} onRow={(r) => setOpen(r.id)} cols={[
-        { label: "#", k: "id" },
-        { label: "Candle", render: (r) => fmt.dt(r.candle_time) },
-        { label: "Symbol", k: "symbol" },
-        { label: "TF", k: "timeframe" },
-        { label: "Action", render: (r) => <Badge tone={statusTone(r.action)}>{r.action}</Badge> },
-        { label: "Entry", num: true, render: (r) => fmt.px(r.entry_ref, digitsFor(r.symbol)) },
-        { label: "SL", num: true, render: (r) => fmt.px(r.stop_loss, digitsFor(r.symbol)) },
-        { label: "TP", num: true, render: (r) => fmt.px(r.take_profit, digitsFor(r.symbol)) },
-        { label: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
-        { label: "Mode", k: "trading_mode" },
-        { label: "Version", k: "strategy_version" },
-        { label: "", render: (r) => r.action !== "NONE" && r.timeframe !== "MAN" && <button className="btn sm ghost" onClick={(e) => { e.stopPropagation(); setReview(r.id); }}>Setup report</button> },
-      ]} />
-      {review && <SetupReport id={review} onClose={() => setReview(null)} />}
+    <div className="stack">
+      <div className="alert info small">
+        Every strategy signal is scored (0–100, a <b>quality</b> score — not a probability), checked against hard gates (data, costs, risk) and
+        given a verdict: <b>NO TRADE</b>, <b>WATCH</b>, <b>PAPER TEST</b> or <b>RESEARCH SUPPORTED</b>. Rejected and expired signals are kept and
+        followed afterwards, so the results are not biased. Today: {Object.entries(today).map(([k, v]) => `${k.toLowerCase().replace("_", " ")} ${v}`).join(" · ") || "no setups yet"}.
+      </div>
+      <Card title="Signal board" actions={<label className="check small"><input type="checkbox" checked={raw} onChange={(e) => setRaw(e.target.checked)} /> show raw log (every candle)</label>}>
+        <Tabs value={tab} onChange={setTab} tabs={TABS.map(([k, label]) => ({ k, label }))} />
+        {!raw ? (
+          <Table rows={data?.signals} onRow={(r) => setOpen(r.id)} empty="No signals in this tab yet" cols={[
+            { label: "Candle", render: (r) => fmt.dt(r.candle_time) },
+            { label: "Setup", render: (r) => <span><Badge tone={statusTone(r.side)}>{r.side}</Badge> {r.symbol} {r.timeframe}</span> },
+            { label: "Score", num: true, render: (r) => (r.score != null ? <b>{r.score}</b> : "—") },
+            { label: "Verdict", render: (r) => (r.verdict ? <Badge tone={VERDICT[r.verdict]?.tone}>{VERDICT[r.verdict]?.label}</Badge> : <span className="muted small">not scored</span>) },
+            { label: "Spread", num: true, render: (r) => (r.spread != null ? `${r.spread} ${r.spread_unit}` : "—") },
+            { label: "Data age", num: true, render: (r) => (r.data_age_s != null ? `${Math.round(r.data_age_s)}s` : "—") },
+            { label: "Entry / SL / TP", render: (r) => <span className="mono small">{fmt.px(r.entry, digitsFor(r.symbol))} / {fmt.px(r.stop, digitsFor(r.symbol))} / {fmt.px(r.target, digitsFor(r.symbol))}</span> },
+            { label: "Net R:R", num: true, render: (r) => r.net_rr ?? "—" },
+            { label: "Max loss", num: true, render: (r) => (r.max_loss != null ? fmt.money(r.max_loss) : "—") },
+            { label: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
+            { label: "Afterwards", render: (r) => (r.outcome ? <span className={r.outcome_r > 0 ? "pos" : r.outcome_r < 0 ? "neg" : ""}>{r.outcome}{r.outcome_r != null ? ` ${r.outcome_r} R` : ""}</span> : "—") },
+            { label: "Reason", render: (r) => <span className="small muted trunc" title={r.reason}>{r.reason}</span> },
+            { label: "", render: (r) => <button className="btn sm ghost" onClick={(e) => { e.stopPropagation(); setReview(r.id); }}>Report</button> },
+          ]} />
+        ) : (
+          <Table rows={rawData} onRow={(r) => setOpen(r.id)} cols={[
+            { label: "#", k: "id" }, { label: "Candle", render: (r) => fmt.dt(r.candle_time) }, { label: "Symbol", k: "symbol" }, { label: "TF", k: "timeframe" },
+            { label: "Action", render: (r) => <Badge tone={statusTone(r.action)}>{r.action}</Badge> },
+            { label: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> }, { label: "Version", k: "strategy_version" },
+          ]} />
+        )}
+      </Card>
       {open && <SignalDetail id={open} onClose={() => setOpen(null)} />}
-    </Card>
+      {review && <SetupReport id={review} onClose={() => setReview(null)} />}
+    </div>
   );
 }

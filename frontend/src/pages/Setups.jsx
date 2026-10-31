@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
+import { AssessmentPanel } from "./Assessment.jsx";
 import { Badge, Card, Field, Modal, Switch, Table, countdown, digitsFor, fmt, modeLabel, statusTone, useAction, useApi, useToast } from "../components.jsx";
 
 const STRAT = { trend_pullback: "EMA trend pullback", smc_sweep_bos: "SMC sweep → BOS → retest", manual: "manual" };
@@ -30,6 +31,9 @@ export function SetupReport({ id, onClose, onDecided }) {
         <span className="small muted">signal candle {fmt.dt(s.candle_time)} · v{s.version}</span>
       </div>
       <div className="alert info small" style={{ marginTop: 8 }}><b>Hypothesis.</b> {r.hypothesis}<br /><b>Invalidation.</b> {r.invalidation}</div>
+      <details open={waiting} style={{ margin: "10px 0" }}><summary className="small"><b>Score, verdict and money at stake (net of costs)</b></summary>
+        <AssessmentPanel signalId={id} live={waiting} />
+      </details>
 
       <div className="outcome">
         <div><div className="lbl">Entry (signal)</div><div className="val">{fmt.px(o.entry_ref, d)}</div><div className="small muted">now {fmt.px(rk.entry_now, d)}</div></div>

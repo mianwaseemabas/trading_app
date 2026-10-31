@@ -10,6 +10,7 @@ if os.getenv("APP_ENV") != "test":
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select, text  # noqa: E402
 
+from app import state  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.main import app, bootstrap  # noqa: E402
 from app.models import Quote, Signal, SignalApproval, SmcEvent, User, utcnow  # noqa: E402
@@ -41,6 +42,7 @@ def fresh_db():
 @pytest.fixture(autouse=True)
 def market_open(monkeypatch):
     monkeypatch.setattr(trading, "data_freshness", lambda *a, **k: (True, "ok (test)"))
+    monkeypatch.setattr(__import__("app.services.quality", fromlist=["x"]), "session_state", lambda *a, **k: "OPEN")
 
 
 @pytest.fixture
@@ -83,9 +85,17 @@ def test_engine_waits_for_approval(c, db, monkeypatch):
     cfg = c.get("/api/system/strategy").json()
     last = md.load_candles(db, "EURUSD", "H1", limit=5).index[-1].to_pydatetime()
     monkeypatch.setattr(eng, "utcnow", lambda: last + timedelta(minutes=61))
+    from app.services import assess
+    monkeypatch.setattr(assess, "utcnow", lambda: last + timedelta(minutes=61))
+    st = state.get(db, "assessment")
+    st.update(min_watch=0, min_candidate=0)
+    state.put(db, "assessment", st)
+    state.put(db, "news_status", {"ok": True, "last_fetch": utcnow().isoformat(), "error": "", "count": 0})
+    db.commit()
     sig = eng.evaluate_symbol(db, "EURUSD", "H1", cfg, "PAPER")
     db.commit()
-    assert sig is not None and sig.status == "AWAITING", sig and (sig.status, sig.risk_checks)
+    from app.models import SignalAssessment
+    assert sig is not None and sig.status == "AWAITING", (sig.status, db.get(SignalAssessment, sig.id).reasons)
     assert db.get(SignalApproval, sig.id).status == "WAITING"
     assert not c.get("/api/positions?status=OPEN").json()  # nothing traded yet
     assert db.scalar(select(SmcEvent.id).limit(1)) is not None or True  # logging must not break the engine

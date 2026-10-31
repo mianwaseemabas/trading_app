@@ -12,6 +12,7 @@ from .. import state
 from ..audit import audit
 from ..db import get_db
 from ..deps import client_ip, require
+from ..services import livegate
 from ..models import Position, User, utcnow
 from ..secretbox import encrypt, mask
 from ..security import user_has, verify_password
@@ -100,7 +101,7 @@ def update_broker(name: str, body: BrokerUpdate, request: Request, user: User = 
                 if v == "live":
                     if not user_has(user, "live.approve"):
                         raise HTTPException(403, "Missing permission: live.approve")
-                    if not state.get(db, "live_gate").get("approved"):
+                    if not livegate.is_approved(db):
                         raise HTTPException(400, "Approve the live-trading gate first (Risk & Strategy page)")
             if c.get(k) != v:
                 c[k] = v
@@ -174,7 +175,7 @@ def update_limits(body: LimitsIn, request: Request, user: User = Depends(require
     if body.allow_real and not cfg["allow_real"]:
         if not user_has(user, "live.approve"):
             raise HTTPException(403, "Missing permission: live.approve")
-        if not state.get(db, "live_gate").get("approved"):
+        if not livegate.is_approved(db):
             raise HTTPException(400, "Approve the live-trading gate first")
     changes = {k: {"from": cfg[k], "to": getattr(body, k)} for k in ("max_volume", "max_spread_points", "allow_real")
                if cfg[k] != getattr(body, k)}

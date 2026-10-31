@@ -76,6 +76,13 @@ def approve(signal_id: int, body: DecisionIn, request: Request, user: User = Dep
         sig.status = "EXPIRED"
         db.commit()
         raise HTTPException(409, "This setup expired; it is no longer valid")
+    from ..services import assess
+    fresh = assess.assess(db, sig, save=True)
+    if fresh.data.get("data_blocked"):
+        db.commit()
+        raise HTTPException(400, f"Market data is not trustworthy right now — {fresh.data.get('quality')}: "
+                                 f"{'; '.join(fresh.data.get('issues') or []) or fresh.data.get('session')}. Wait and try again.")
+    assess.lifecycle(db, sig.id, "APPROVED", f"by {user.username}: {body.note}"[:300])
     if sig.trading_mode.startswith("CRYPTO_"):
         return _approve_crypto(db, sig, a, body, user, request)
     mode = state.get(db, "trading")["mode"]
@@ -143,6 +150,8 @@ def decline(signal_id: int, body: DecisionIn, request: Request, user: User = Dep
         raise HTTPException(409, f"This setup is already {a.status.lower()}")
     a.status, a.decided_by, a.decided_at, a.note = "DECLINED", user.username, utcnow(), body.note
     sig.status = "DECLINED"
+    from ..services.assess import lifecycle
+    lifecycle(db, sig.id, "DECLINED", f"by {user.username}: {body.note}"[:300])
     audit(db, "setup.declined", user=user, ip=client_ip(request), entity="signal", entity_id=sig.id,
           details={"symbol": sig.symbol, "side": sig.action, "note": body.note})
     db.commit()

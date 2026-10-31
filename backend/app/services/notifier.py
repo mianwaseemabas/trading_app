@@ -28,5 +28,11 @@ def _send(text: str) -> None:
 
 
 def notify(text: str, enabled: bool = True) -> None:
-    if enabled and telegram_configured():
+    """Legacy direct messages. Telegram/email delivery now goes through the alert center
+    (services/alerts.py) with dedup, retries and per-type preferences, so this only logs."""
+    log.info("notify: %s", text)
+
+
+def send_direct(text: str) -> None:
+    if telegram_configured():
         threading.Thread(target=_send, args=(f"[{settings.app_name}] {text}",), daemon=True).start()

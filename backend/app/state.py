@@ -28,7 +28,7 @@ DEFAULTS: dict[str, Any] = {
         "stale_quote_seconds": 120,
         "stale_heartbeat_seconds": 90,
     },
-    "risk": {"max_spread_pct_other": 0.2, "slippage_pct_other": 0.05,
+    "risk": {"max_spread_pct_other": 0.2, "slippage_pct_other": 0.05, "max_trades_per_day": 3,
         "reference_balance": 500.0,
         "risk_per_trade_pct": 0.5,
         "daily_loss_pct": 2.0,
@@ -87,7 +87,7 @@ DEFAULTS: dict[str, Any] = {
         "approved_by": "",
         "approved_at": "",
     },
-    "paper_account": {"balance": 500.0, "currency": "USD"},
+    "paper_account": {"balance": 500.0, "currency": "USD", "start_balance": 500.0, "reset_at": ""},
     "anchors": {},  # per-mode day/week equity anchors for loss limits
     "reconciliation": {"ok": True, "detail": "", "at": ""},
     "bridge": {"last_seen": "", "ip": "", "terminal": {}, "version": ""},
@@ -110,6 +110,12 @@ DEFAULTS: dict[str, Any] = {
     "crypto_status": {"market_ok": False, "market_error": "", "market_at": "", "changes": {}, "balances": {}, "keys_ok": False,
                       "keys_error": ""},
     "favorites": [],
+    "alert_prefs": {"channels": {"telegram": ["APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED",
+                                              "BROKER_DISCONNECTED", "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "RECONCILIATION",
+                                              "DAILY_SUMMARY", "WEEKLY_REVIEW"],
+                                 "email": ["LOSS_LIMIT_REACHED", "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "DAILY_SUMMARY"]},
+                    "telegram": {}, "email": {}},
+    "assessment": {"min_watch": 60, "min_candidate": 70, "min_eligible": 80, "min_sample": 30, "approval_min_tier": "WATCH"},
     "controls": {"require_approval": True, "approval_minutes": 60,
         "auto_trading": True,  # strategy may place orders (when the mode allows orders)
         "manual_trading": True,  # manual order ticket allowed
@@ -132,6 +138,9 @@ DEFAULTS: dict[str, Any] = {
 
 # Risk settings where a larger value means more risk. Increases require password re-entry.
 RISK_INCREASING_UP = {
+    "max_trades_per_day",
+    "max_spread_pct_other",
+    "slippage_pct_other",
     "risk_per_trade_pct",
     "daily_loss_pct",
     "weekly_loss_pct",
@@ -145,6 +154,9 @@ RISK_INCREASING_DOWN = {"min_free_margin_pct", "commission_per_lot"}
 RISK_LOCKED_KEYS = {"martingale", "grid", "averaging_down", "stop_loss_required"}
 
 RISK_BOUNDS = {
+    "max_trades_per_day": (1, 20),
+    "max_spread_pct_other": (0.01, 2.0),
+    "slippage_pct_other": (0.0, 1.0),
     "reference_balance": (1, 10_000_000),
     "risk_per_trade_pct": (0.01, 2.0),
     "daily_loss_pct": (0.1, 10.0),

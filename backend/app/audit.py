@@ -28,6 +28,12 @@ def audit(
             ip=ip or "",
         )
     )
+    try:  # turn important audit events into alerts (never breaks the caller)
+        from .services.alerts import from_audit
+        with db.begin_nested():
+            from_audit(db, action, str(entity_id or ""), details or {})
+    except Exception:  # pragma: no cover
+        pass
 
 
 def event(db: Session, source: str, message: str, level: str = "INFO", details: dict | None = None) -> None:

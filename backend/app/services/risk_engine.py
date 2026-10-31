@@ -70,6 +70,7 @@ class RiskContext:
     profit_to_account_rate: float | None = None  # 1 unit of profit ccy in account ccy
     base_to_account_rate: float | None = None  # 1 unit of base ccy in account ccy
     duplicate: bool = False
+    trades_today: int = 0
     extra_checks: list = field(default_factory=list)  # (name, passed, detail) from trading controls / news
 
 
@@ -125,6 +126,9 @@ def evaluate(ctx: RiskContext) -> RiskDecision:
     check("forbidden techniques disabled",
           not cfg.get("martingale") and not cfg.get("grid"), "martingale/grid must be off")
     check("not a duplicate order", not ctx.duplicate)
+    mx = int(cfg.get("max_trades_per_day", 0) or 0)
+    if mx:
+        check("new trades today below limit", ctx.trades_today < mx, f"{ctx.trades_today} today (max {mx})")
     check("market data fresh", ctx.data_ok, ctx.data_detail)
     check("quote fresh", ctx.quote_age_s <= ctx.stale_quote_seconds, f"age {ctx.quote_age_s:.0f}s")
     check("broker reconciliation ok", ctx.reconciliation_ok, ctx.reconciliation_detail)

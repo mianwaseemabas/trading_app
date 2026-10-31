@@ -102,6 +102,77 @@ function Unlock({ status, reload }) {
   );
 }
 
+function TrustPanel() {
+  const { data: h } = useApi("/data/health", { interval: 30000 });
+  const { data: r } = useApi("/risk/status", { interval: 15000 });
+  const { data: q } = useApi("/signal-board?tab=qualified&limit=20", { interval: 30000 });
+  const { data: p } = useApi("/performance?mode=PAPER&days=30", { interval: 60000 });
+  const { data: acc } = useApi("/accounts", { interval: 30000 });
+  const [showQ, setShowQ] = useState(false);
+  const m = p?.metrics || {};
+  const bad = (h?.quotes || []).filter((x) => !x.tradeable);
+  return (
+    <div className="stack">
+      {r && r.no_trade_reasons.length > 0 && (
+        <div className="no-trade"><b>NO TRADE right now</b> — that is a valid decision. Reasons: {r.no_trade_reasons.join(" · ")}</div>
+      )}
+      <div className="trust-cards">
+        <Card title="Data health">
+          {h ? (
+            <>
+              <Stat label="Markets with trustworthy prices" value={`${h.tradeable.length} / ${h.quotes.length}`} tone={h.tradeable.length ? "" : "bad"} />
+              <ul className="small" style={{ paddingLeft: 16, margin: "6px 0" }}>
+                {h.feeds.map((f) => <li key={f.name} className={f.ok ? "pos" : "neg"}>{f.ok ? "✓" : "✕"} {f.name}: <span className="muted">{f.detail}</span></li>)}
+                {bad.slice(0, 4).map((x) => <li key={x.symbol} className="muted">{x.symbol}: {x.quality.toLowerCase().replace("_", " ")}{x.spread_pips != null ? ` · ${x.spread_pips} pips` : x.spread_bps != null ? ` · ${x.spread_bps} bps` : ""}{x.explanation ? ` — ${x.explanation}` : ""}</li>)}
+              </ul>
+              {h.incidents.length > 0 && <div className="small neg">{h.incidents.length} open data incident(s)</div>}
+            </>
+          ) : <p className="muted small">…</p>}
+        </Card>
+        <Card title="Risk available">
+          {r ? (
+            <div className="kv small" style={{ gridTemplateColumns: "1fr" }}>
+              <div><span>Account</span><b>{modeLabel(r.mode)} · equity {fmt.money(r.equity)} {r.currency}</b></div>
+              <div><span>Risk per trade</span><b>{fmt.money(r.risk_per_trade)} ({r.risk_per_trade_pct}%)</b></div>
+              <div><span>Daily loss</span><b>{fmt.money(r.day_loss)} / {fmt.money(r.day_limit)}</b></div>
+              <div><span>Weekly loss</span><b>{fmt.money(r.week_loss)} / {fmt.money(r.week_limit)}</b></div>
+              <div><span>Trades today</span><b>{r.trades_today} / {r.max_trades_per_day}</b></div>
+              <div><span>Open positions</span><b>{r.open_positions} / {r.max_positions}</b></div>
+              <div><span>Live gate</span><b>{r.live_gate_approved ? "approved" : "locked"}</b></div>
+            </div>
+          ) : <p className="muted small">…</p>}
+        </Card>
+        <Card title="Qualified signals">
+          <Stat label="Waiting / ordered (recent)" value={q?.signals?.length ?? "…"} sub={q ? Object.entries(q.today).map(([k, v]) => `${k.toLowerCase().replace("_", " ")} ${v}`).join(" · ") || "no setups today" : ""} />
+          <a className="small" href="#/signals">Signal board →</a> · <a className="small" href="#/setups">Approve →</a>
+        </Card>
+        <Card title="Net performance (paper, 30 days)">
+          {m.trades ? (
+            <div className="kv small" style={{ gridTemplateColumns: "1fr" }}>
+              <div><span>Net after costs</span><b className={pnlClass(m.net_pnl)}>{fmt.money(m.net_pnl)}</b></div>
+              <div><span>Trades · win rate</span><b>{m.trades} · {fmt.pct(m.win_rate_pct, 0)}</b></div>
+              <div><span>Expectancy / trade</span><b className={pnlClass(m.expectancy)}>{fmt.money(m.expectancy)}</b></div>
+              <div><span>Profit factor · max DD</span><b>{fmt.num(m.profit_factor, 2)} · {fmt.money(m.max_drawdown)}</b></div>
+              <div className="tiny muted">{m.trades < 30 ? "Fewer than 30 trades: not meaningful yet." : ""}</div>
+            </div>
+          ) : <p className="muted small">No closed paper trades in 30 days.</p>}
+        </Card>
+      </div>
+      {acc && (
+        <Card title="Accounts (each separate — never added together)">
+          <Table rows={acc.accounts.map((a) => ({ ...a, id: a.env }))} cols={[
+            { label: "Environment", render: (a) => <span><b>{a.label}</b>{a.active && <Badge tone="info">active</Badge>}{a.real_money && <Badge tone="bad">REAL</Badge>}</span> },
+            { label: "Source", render: (a) => <span className="small muted pii">{a.source}</span> },
+            { label: "Balance", num: true, render: (a) => `${fmt.money(a.balance)} ${a.currency}` },
+            { label: "Equity", num: true, render: (a) => `${fmt.money(a.equity)} ${a.currency}` },
+            { label: "Updated", render: (a) => <span className="small muted">{fmt.dt(a.updated_at)}</span> },
+          ]} />
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { can } = useAuth();
   const { data: s, reload, error } = useApi("/system/status", { interval: 5000 });
@@ -120,6 +191,7 @@ export default function Dashboard() {
     <div className="stack">
       {s.data.source === "simulator" && <div className="alert warn">Data source is the <b>simulator</b> (synthetic prices for testing the system). Switch to broker data in System settings once cTrader or MT5 is connected.</div>}
       <Unlock status={s} reload={reload} />
+      <TrustPanel />
       {waiting?.setups?.length > 0 && <div className="alert warn"><b>{waiting.setups.length} trade setup(s) waiting for your approval.</b> <a href="#/setups">Review →</a></div>}
       {s.trading.kill_switch && <div className="alert bad"><strong>Kill switch engaged.</strong> {s.trading.kill_switch_reason}</div>}
 

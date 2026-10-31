@@ -94,6 +94,10 @@ function RunDetail({ id }) {
           <p className="muted small">Does the SMC logic add measurable value over the simple EMA baseline? Only trust a difference that holds in the final test and over 30+ trades.</p>
         </>
       )}
+      {m.provenance && (
+        <p className="tiny muted mono">Provenance: code {m.provenance.code_version} · config {m.provenance.config_hash} · data {m.provenance.data_hash} ({m.provenance.candles} candles) · result {m.provenance.result_hash}</p>
+      )}
+      {m.all?.avg_r_ci95 && <p className="small">Average R per trade: <b>{m.all.avg_r}</b> (95% confidence {m.all.avg_r_ci95.join(" to ")}) — if this range includes 0, an edge is not shown.</p>}
       <h4>All trades</h4>
       <MetricsGrid m={m.all} />
       <LineChart series={[{ points: (r.equity_curve || []).map((p) => ({ x: new Date(p.time).getTime() / 1000, y: p.equity })) }]} baseline={r.params.initial_balance} yFormat={(v) => fmt.money(v)} />

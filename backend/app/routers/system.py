@@ -83,8 +83,8 @@ def set_mode(body: ModeIn, request: Request, user: User = Depends(require("tradi
     if body.mode == "MT5_LIVE":
         if not user_has(user, "live.approve"):
             raise HTTPException(403, "Missing permission: live.approve")
-        gate = state.get(db, "live_gate")
-        if not gate.get("approved"):
+        from ..services import livegate
+        if not livegate.is_approved(db):
             raise HTTPException(400, "Live-trading gate has not been approved")
         _confirm_password(user, body.password)
         if (body.confirm or "").strip() != LIVE_CONFIRM_PHRASE:
@@ -130,6 +130,25 @@ def kill_switch(body: KillIn, request: Request, user: User = Depends(require("ki
     notify(f"{'🛑 KILL SWITCH ENGAGED' if body.engaged else '✅ Kill switch released'} by {user.username}. {body.reason}")
     db.commit()
     return {"trading": state.get(db, "trading"), "cancelled_orders": cancelled, "positions_closing": closed}
+
+
+@router.post("/risk/pilot-preset")
+def pilot_preset(request: Request, user: User = Depends(require("risk.edit")), db: Session = Depends(get_db)):
+    """Conservative paper-pilot limits from the master plan. Only ever lowers risk (no password needed)."""
+    cur = state.get_locked(db, "risk")
+    target = {"risk_per_trade_pct": 0.25, "daily_loss_pct": 1.0, "weekly_loss_pct": 3.0, "max_concurrent_positions": 1,
+              "max_positions_per_symbol": 1, "max_trades_per_day": 3}
+    new = dict(cur)
+    for k, v in target.items():
+        new[k] = min(cur.get(k, v), v)
+    changes = {k: {"from": cur.get(k), "to": new[k]} for k in target if new[k] != cur.get(k)}
+    state.put(db, "risk", new, by=user.username)
+    c = state.get_locked(db, "controls")
+    c["require_approval"] = True
+    state.put(db, "controls", c, by=user.username)
+    audit(db, "risk.pilot_preset", user=user, ip=client_ip(request), details={"changes": changes})
+    db.commit()
+    return {"risk": new, "changes": changes, "require_approval": True}
 
 
 class UnlockIn(BaseModel):
@@ -292,6 +311,7 @@ def put_strategy(body: StrategyIn, request: Request, user: User = Depends(requir
 # ------------------------------------------------------------- live gate
 class GateIn(BaseModel):
     items: dict
+    notes: dict | None = None
     approve: bool = False
     password: str | None = None
 
@@ -307,21 +327,48 @@ GATE_ITEMS = {
 
 @router.get("/live-gate")
 def get_gate(user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
-    return {"gate": state.get(db, "live_gate"), "items": GATE_ITEMS, "confirm_phrase": LIVE_CONFIRM_PHRASE}
+    from ..services import livegate
+    return {"gate": state.get(db, "live_gate"), "items": GATE_ITEMS, "confirm_phrase": LIVE_CONFIRM_PHRASE,
+            "evidence": livegate.evidence(db, user), "approved_and_current": livegate.is_approved(db),
+            "rules": f"Approval needs every box ticked, written notes, all automatic evidence passing, your password and 2FA. "
+                     f"It expires after {livegate.APPROVAL_DAYS} days."}
+
+
+@router.post("/live-gate/self-test")
+def gate_self_test(request: Request, user: User = Depends(require("live.approve")), db: Session = Depends(get_db)):
+    from ..services import livegate
+    res = livegate.self_test()
+    gate = state.get_locked(db, "live_gate")
+    gate["self_test"] = {"at": utcnow().isoformat(), "passed": all(r["passed"] for r in res), "results": res}
+    state.put(db, "live_gate", gate, by=user.username)
+    audit(db, "live_gate.self_test", user=user, ip=client_ip(request), details={"passed": gate["self_test"]["passed"]})
+    db.commit()
+    return gate["self_test"]
 
 
 @router.put("/live-gate")
 def put_gate(body: GateIn, request: Request, user: User = Depends(require("live.approve")), db: Session = Depends(get_db)):
     gate = state.get_locked(db, "live_gate")
+    from ..services import livegate
     for k, v in body.items.items():
         if k in GATE_ITEMS:
             gate[k] = bool(v)
+    if body.notes is not None:
+        gate["notes"] = {k: str(v)[:1000] for k, v in body.notes.items() if k in GATE_ITEMS and str(v).strip()}
     all_ok = all(gate[k] for k in GATE_ITEMS)
     if body.approve:
         if not all_ok:
             raise HTTPException(400, "All gate items must be checked before approval")
+        state.put(db, "live_gate", gate, by=user.username)
+        ev = livegate.evidence(db, user)
+        missing = [f"{GATE_ITEMS[k]}: {v['detail']}" for k, v in ev.items() if not v["passed"]]
+        if missing:
+            raise HTTPException(400, "Evidence missing — " + " | ".join(missing))
+        if not user.totp_enabled:
+            raise HTTPException(400, "Turn on two-factor authentication before approving live trading")
         _confirm_password(user, body.password)
-        gate.update(approved=True, approved_by=user.username, approved_at=utcnow().isoformat())
+        gate.update(approved=True, approved_by=user.username, approved_at=utcnow().isoformat(),
+                    expires_at=(utcnow() + timedelta(days=livegate.APPROVAL_DAYS)).isoformat(), evidence=ev)
     if not all_ok and gate.get("approved"):
         gate.update(approved=False, approved_by="", approved_at="")
         br = state.get_locked(db, "brokers")
@@ -397,7 +444,8 @@ def get_notify(user: User = Depends(active_user), db: Session = Depends(get_db))
 def test_notify(user: User = Depends(require("system.settings"))):
     if not telegram_configured():
         raise HTTPException(400, "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first")
-    notify(f"Test notification from {user.username}")
+    from ..services.notifier import send_direct
+    send_direct(f"Test notification from {user.username}")
     return {"status": "sent"}
 
 
@@ -411,7 +459,8 @@ def paper_reset(body: PaperResetIn, request: Request, user: User = Depends(requi
     _confirm_password(user, body.password)
     if trading.open_positions(db, "PAPER"):
         raise HTTPException(400, "Close open paper positions first")
-    state.put(db, "paper_account", {"balance": body.balance, "currency": "USD"}, by=user.username)
+    state.put(db, "paper_account", {"balance": body.balance, "currency": "USD", "start_balance": body.balance,
+                                     "reset_at": utcnow().isoformat()}, by=user.username)
     anchors = state.get(db, "anchors")
     anchors.pop("PAPER", None)
     state.put(db, "anchors", anchors)

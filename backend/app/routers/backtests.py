@@ -72,6 +72,15 @@ def _execute(run_id: int) -> None:
                 o = run_backtest(df, {**cfg, "name": other}, risk, spec, p)["metrics"]
                 comparison = {"strategy": other, "all": o["all"], "segments": o["segments"], "signals": o["signals"],
                               "warnings": o["warnings"]}
+            import hashlib
+            import json as _json
+            import os as _os
+            cfg_hash = hashlib.sha256(_json.dumps({"params": p, "strategy": cfg, "risk": risk}, sort_keys=True, default=str).encode()).hexdigest()[:16]
+            data_hash = hashlib.sha256(f"{len(df)}|{df.index[0]}|{df.index[-1]}|{float(df['close'].sum()):.6f}".encode()).hexdigest()[:16]
+            res_hash = hashlib.sha256(_json.dumps(res["trades"], sort_keys=True, default=str).encode()).hexdigest()[:16]
+            res["metrics"]["provenance"] = {"code_version": _os.getenv("GIT_COMMIT", "unknown"), "config_hash": cfg_hash, "data_hash": data_hash,
+                                            "result_hash": res_hash, "data_source": str(df["source"].iloc[-1]) if "source" in df else "stored candles",
+                                            "candles": len(df), "note": "Same code + config + data must give the same result hash."}
             run.metrics = {**res["metrics"], "comparison": comparison,
                            "strategy": {k: cfg[k] for k in cfg if k not in ("symbols", "timeframes")}}
             run.trades = res["trades"]

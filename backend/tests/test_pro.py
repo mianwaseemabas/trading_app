@@ -38,6 +38,7 @@ def fresh_db():
 @pytest.fixture(autouse=True)
 def market_open(monkeypatch):
     monkeypatch.setattr(trading, "data_freshness", lambda *a, **k: (True, "ok (test)"))
+    monkeypatch.setattr(__import__("app.services.quality", fromlist=["x"]), "session_state", lambda *a, **k: "OPEN")
 
 
 @pytest.fixture

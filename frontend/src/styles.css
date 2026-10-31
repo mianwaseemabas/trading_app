@@ -352,3 +352,19 @@ button.chip { cursor: pointer; }
 @media (max-width: 1100px) { .term-grid { grid-template-columns: 1fr; } .order-panel { position: static; } }
 @media (max-width: 800px) { .term-body { grid-template-columns: 1fr; } .wl { position: static; max-height: 300px; } .tcards { grid-template-columns: 1fr; } }
 .brand-sub { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); letter-spacing: .02em; }
+
+/* alerts & privacy */
+.bell { position: relative; font-size: 17px; text-decoration: none; padding: 2px 6px; opacity: .8; }
+.bell.has { opacity: 1; }
+.bell span { position: absolute; top: -4px; right: -6px; background: var(--bad); color: #fff; font-size: 10px; border-radius: 9px; padding: 0 5px; font-weight: 700; }
+.alert-list { display: flex; flex-direction: column; gap: 6px; }
+.alert-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+.alert-row.unread { border-left: 3px solid var(--accent); background: rgba(47,123,255,.05); }
+.alert-body { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 0 0 6px; }
+.tbl-wrap { max-height: 420px; overflow: auto; }
+body.privacy .pii { filter: blur(6px); }
+.no-trade { border: 1px solid rgba(239,68,68,.5); background: rgba(239,68,68,.08); border-radius: 12px; padding: 12px 16px; }
+.no-trade b { color: var(--bad); }
+.trust-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .trust-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.span2 { grid-column: 1 / -1; }

@@ -49,6 +49,7 @@ def market_open(monkeypatch, request):
     """Tests must not depend on the wall clock (the simulator pauses at weekends)."""
     if "bridge" not in request.node.name:
         monkeypatch.setattr(trading, "data_freshness", lambda *a, **k: (True, "ok (test)"))
+        monkeypatch.setattr(__import__("app.services.quality", fromlist=["x"]), "session_state", lambda *a, **k: "OPEN")
 
 
 @pytest.fixture

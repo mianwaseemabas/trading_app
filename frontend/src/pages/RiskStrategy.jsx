@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
-import { Badge, Card, Field, PasswordPrompt, useAction, useApi } from "../components.jsx";
+import { Badge, Card, Field, PasswordPrompt, fmt, useAction, useApi } from "../components.jsx";
 
 const RISK_LABELS = {
   reference_balance: ["Reference balance", "Risk is sized from min(equity, this). Prevents automatic risk growth."],
@@ -10,11 +10,14 @@ const RISK_LABELS = {
   weekly_loss_pct: ["Weekly loss stop (%)", ""],
   max_concurrent_positions: ["Max concurrent positions", ""],
   max_positions_per_symbol: ["Max positions per symbol", ""],
+  max_trades_per_day: ["Max new trades per day", "Stops over-trading; pilot default 3"],
   max_spread_points: ["Max spread (points)", "10 points = 1 pip on 5-digit pairs"],
   max_slippage_points: ["Max slippage (points)", "Also added to the risk calculation"],
   commission_per_lot: ["Commission per lot (round turn)", "Included in position sizing"],
   min_free_margin_pct: ["Min free margin after trade (% of equity)", ""],
   order_ttl_seconds: ["Order time-to-live (s)", "Unsent orders expire"],
+  max_spread_pct_other: ["Max spread % (stocks, indices, gold)", "Non-forex markets: % of price"],
+  slippage_pct_other: ["Slippage allowance % (non-forex)", "Added to the planned loss"],
   include_unrealized_in_limits: ["Include unrealized P&L in loss limits", ""],
 };
 
@@ -115,34 +118,70 @@ function LiveGate() {
   const { can } = useAuth();
   const { data, reload } = useApi("/system/live-gate");
   const [items, setItems] = useState({});
+  const [notes, setNotes] = useState({});
   const [prompt, setPrompt] = useState(false);
-  const [run] = useAction();
-  useEffect(() => { if (data) setItems(Object.fromEntries(Object.keys(data.items).map((k) => [k, data.gate[k]]))); }, [data]);
+  const [run, busy] = useAction();
+  useEffect(() => {
+    if (data) {
+      setItems(Object.fromEntries(Object.keys(data.items).map((k) => [k, data.gate[k]])));
+      setNotes(data.gate.notes || {});
+    }
+  }, [data]);
   if (!data) return null;
   const editable = can("live.approve");
-  const allOk = Object.values(items).every(Boolean);
+  const allOk = Object.values(items).every(Boolean) && Object.values(data.evidence).every((e) => e.passed);
+  const st = data.gate.self_test;
   return (
-    <Card title="Live-trading gate" actions={<Badge tone={data.gate.approved ? "warn" : "muted"}>{data.gate.approved ? `Approved by ${data.gate.approved_by}` : "Not approved"}</Badge>}>
-      <p className="muted small">Broker Live mode stays unavailable until every item is confirmed and an authorised user approves with their password. Unchecking any item revokes approval and drops Live to Demo.</p>
+    <Card title="Live-trading gate" actions={<Badge tone={data.approved_and_current ? "warn" : "muted"}>{data.approved_and_current ? `Approved until ${fmt.dt(data.gate.expires_at)}` : data.gate.approved ? "Approval EXPIRED" : "Not approved — live locked"}</Badge>}>
+      <p className="muted small">{data.rules} Real-money modes (broker LIVE and crypto LIVE) are checked on the server for every order — the screen alone can never turn them on.</p>
       <ul className="gate">
-        {Object.entries(data.items).map(([k, label]) => (
-          <li key={k}><label className="check"><input type="checkbox" disabled={!editable} checked={!!items[k]} onChange={(e) => setItems({ ...items, [k]: e.target.checked })} /> {label}</label></li>
-        ))}
+        {Object.entries(data.items).map(([k, label]) => {
+          const ev = data.evidence[k];
+          return (
+            <li key={k} style={{ display: "block", marginBottom: 10 }}>
+              <label className="check"><input type="checkbox" disabled={!editable} checked={!!items[k]} onChange={(e) => setItems({ ...items, [k]: e.target.checked })} /> {label}</label>
+              <div className={`small ${ev.passed ? "pos" : "neg"}`} style={{ marginLeft: 24 }}>{ev.passed ? "✓ evidence:" : "✕ missing:"} {ev.detail}</div>
+              {(k === "broker_legal_checked" || k === "credentials_secured") && (
+                <input style={{ marginLeft: 24, width: "calc(100% - 24px)" }} disabled={!editable} placeholder="Write what you checked (required)"
+                  value={notes[k] || ""} onChange={(e) => setNotes({ ...notes, [k]: e.target.value })} />
+              )}
+            </li>
+          );
+        })}
       </ul>
+      {st && (
+        <details className="small"><summary>Risk-engine self-test: {st.passed ? <b className="pos">passed</b> : <b className="neg">failed</b>} · {fmt.dt(st.at)}</summary>
+          <ul>{st.results.map((r) => <li key={r.test} className={r.passed ? "pos" : "neg"}>{r.passed ? "✓" : "✕"} {r.test} (expected {r.expected}, got {r.got})</li>)}</ul>
+        </details>
+      )}
       {editable && (
-        <div className="row end gap">
-          <button className="btn" onClick={() => run(() => api.put("/system/live-gate", { items }), "Checklist saved").then(reload)}>Save checklist</button>
-          <button className="btn danger" disabled={!allOk || data.gate.approved} onClick={() => setPrompt(true)}>Approve live trading</button>
+        <div className="row end gap wrap">
+          <button className="btn" disabled={busy} onClick={() => run(() => api.post("/system/live-gate/self-test"), "Self-test finished").then(reload)}>Run risk self-test</button>
+          <button className="btn" onClick={() => run(() => api.put("/system/live-gate", { items, notes }), "Checklist saved").then(reload)}>Save checklist</button>
+          <button className="btn danger" disabled={!allOk || data.approved_and_current} title={allOk ? "" : "All boxes and all evidence must pass"} onClick={() => setPrompt(true)}>Approve live trading</button>
         </div>
       )}
-      {prompt && <PasswordPrompt title="Approve live trading gate" message="You confirm all gates have passed and approve the live configuration." onClose={() => setPrompt(false)} onSubmit={(password) => run(() => api.put("/system/live-gate", { items, approve: true, password }), "Live gate approved").then(reload)} />}
+      {prompt && <PasswordPrompt title="Approve live trading gate" message="You confirm the evidence and approve real-money trading for 30 days. Passing the gate does not mean the strategy will make money." onClose={() => setPrompt(false)} onSubmit={(password) => run(() => api.put("/system/live-gate", { items, notes, approve: true, password }), "Live gate approved").then(reload)} />}
     </Card>
+  );
+}
+
+function PilotPreset() {
+  const { can } = useAuth();
+  const [run, busy] = useAction();
+  if (!can("risk.edit")) return null;
+  return (
+    <div className="alert info small row between wrap gap">
+      <span><b>Paper-pilot limits</b> (recommended while testing): 0.25% risk per trade, 1% daily and 3% weekly loss stop, 1 open position, max 3 new trades a day, approval before every strategy trade. Only lowers risk.</span>
+      <button className="btn sm" disabled={busy} onClick={() => run(() => api.post("/system/risk/pilot-preset"), "Pilot limits applied").then(() => window.location.reload())}>Apply pilot limits</button>
+    </div>
   );
 }
 
 export default function RiskStrategy() {
   return (
     <div className="stack">
+      <PilotPreset />
       <RiskForm />
       <StrategyForm />
       <LiveGate />

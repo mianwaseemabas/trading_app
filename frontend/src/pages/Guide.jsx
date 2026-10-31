@@ -31,6 +31,10 @@ const GLOSSARY = [
   ["Fair value gap (FVG)", "A three-candle gap: candle 3's low above candle 1's high (bullish) or the mirror. A revisit is possible, not guaranteed."],
   ["Order block (OB)", "The last opposite-colour candle before a structure break. A zone by definition — not proof of bank orders."],
   ["Expectancy", "Average profit per trade after costs. Must be positive over many trades; a high win rate alone means nothing."],
+  ["Signal score (0–100)", "A quality score from fixed rules: trend alignment, structure/liquidity, independent indicators, net reward:risk, volatility/liquidity, news/session. It is NOT a probability of profit."],
+  ["Verdict", "NO TRADE (do nothing), WATCH (not enough confirmation), PAPER TEST (passes rules, profit not proven), RESEARCH SUPPORTED (enough out-of-sample evidence for controlled paper testing). Never a guarantee."],
+  ["Net R:R and break-even win rate", "Reward vs risk after spread, commission and slippage. The break-even win rate is how often you must win just to not lose money."],
+  ["p(win) UNKNOWN", "The app only shows a win rate after at least 30 comparable signals have resolved. Until then it honestly says UNKNOWN."],
   ["Kill switch", "Emergency stop: blocks all new orders immediately (optionally closes open positions)."],
 ];
 

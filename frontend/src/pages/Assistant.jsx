@@ -15,6 +15,7 @@ const QUICK = [
 
 function Settings({ s, reload }) {
   const [run] = useAction();
+  const [test, setTest] = React.useState(null);
   const [v, setV] = useState({ provider: s.provider, model: s.model, api_key: "", enabled: s.enabled, share_data: s.share_data });
   const [prompt, setPrompt] = useState(false);
   const hint = s.providers[v.provider]?.model_hint;
@@ -37,7 +38,12 @@ function Settings({ s, reload }) {
         <label className="check"><input type="checkbox" checked={v.enabled} onChange={(e) => setV({ ...v, enabled: e.target.checked })} /> Enable assistant</label>
         <label className="check"><input type="checkbox" checked={v.share_data} onChange={(e) => setV({ ...v, share_data: e.target.checked })} /> Share live app data (account, positions, signals, backtests) with the AI so it can explain them</label>
       </div>
-      <div className="row end"><button className="btn primary" onClick={() => setPrompt(true)}>Save</button></div>
+      <div className="row end gap">
+        <button className="btn" onClick={() => run(() => api.post("/ai/test")).then(setTest).catch(() => {})}>Test model</button>
+        <button className="btn primary" onClick={() => setPrompt(true)}>Save</button>
+      </div>
+      {(test || s.last_test) && (() => { const t = test || s.last_test; return (
+        <div className={`alert ${t.ok ? "ok" : "bad"} small`}>{t.ok ? `✓ ${t.provider} / ${t.model} answered in ${t.latency_ms} ms` : `✕ ${t.provider} / ${t.model}: ${t.error}`} {t.at ? <span className="muted">({t.at.slice(0, 16)})</span> : null}</div>); })()}
       {prompt && <PasswordPrompt title="Save AI settings" onClose={() => setPrompt(false)}
         onSubmit={(password) => run(() => api.put("/ai/settings", { ...v, api_key: v.api_key || null, password }), "AI settings saved").then(reload)} />}
     </Card>

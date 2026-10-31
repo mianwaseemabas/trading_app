@@ -24,6 +24,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import client_ip
 from ..models import AccountSnapshot, BridgeNonce, Instrument, Order, Position, Quote, utcnow
+from ..services import livegate
 from ..services import market_data as md
 from ..services.notifier import notify
 from ..secretbox import decrypt, encrypt
@@ -109,7 +110,7 @@ def connector_config(connector: str, auth=Depends(bridge_auth), db: Session = De
     gate = state.get(db, "live_gate")
     c = cfg.get(connector, {})
     out = {"active": cfg["active"] == connector, "version": cfg.get("version", 1),
-           "allow_real": bool(cfg.get("allow_real") and gate.get("approved")),
+           "allow_real": bool(cfg.get("allow_real") and livegate.is_approved(db)),
            "max_volume": cfg.get("max_volume", 0.10), "max_spread_points": cfg.get("max_spread_points", 30)}
     for k, v in c.items():
         if k.endswith("_enc"):
@@ -303,7 +304,9 @@ async def order_result(client_id: str, request: Request, auth=Depends(bridge_aut
                 tr.update(locked=True, lock_reason=f"Stop-loss not verified at broker for {client_id}")
                 state.put(db, "trading", tr)
                 event(db, "execution", f"Stop-loss NOT verified for {client_id}; trading locked", "ERROR")
-                notify(f"⛔ Stop-loss not verified at broker for {o.symbol} ({client_id}). Trading locked.")
+                from ..services.alerts import raise_alert
+                raise_alert(db, "PROTECTION_FAILURE", f"Stop-loss NOT verified at broker for {o.symbol}",
+                            f"Order {client_id}. Trading is locked until you review it.", severity="critical", dedup=f"slv:{client_id}")
     audit(db, f"order.{status.lower()}", entity="order", entity_id=client_id,
           details={k: body.get(k) for k in ("ticket", "price", "volume", "retcode", "error", "sl_verified")})
     notify(f"{'✅' if status == 'FILLED' else '❌'} {o.mode} {o.action} {o.side} {o.volume} {o.symbol}: {status} "

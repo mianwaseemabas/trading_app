@@ -421,3 +421,96 @@ class CryptoLink(Base):
     prot_kind: Mapped[str] = mapped_column(String(16), default="")
     exchange_tp: Mapped[bool] = mapped_column(Boolean, default=False)
     buy_order_id: Mapped[str] = mapped_column(String(64), default="")
+
+
+class DataIncident(Base):
+    """A data-quality incident (stale feed, spread too wide) — one row per occurrence."""
+
+    __tablename__ = "data_incidents"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    symbol: Mapped[str] = mapped_column(String(32), default="")
+    started_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(TS, nullable=True, index=True)
+    detail: Mapped[str] = mapped_column(Text, default="")
+
+
+class Alert(Base):
+    """In-app notification (alert center). Alerts are information, never orders."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(TS, default=utcnow, index=True)
+    type: Mapped[str] = mapped_column(String(32), index=True)
+    severity: Mapped[str] = mapped_column(String(8), default="info")  # info | warning | critical
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    dedup_key: Mapped[str] = mapped_column(String(160), unique=True)
+    symbol: Mapped[str] = mapped_column(String(32), default="")
+    signal_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    link: Mapped[str] = mapped_column(String(200), default="")
+    read_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+
+
+class AlertDelivery(Base):
+    __tablename__ = "alert_deliveries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    alert_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    status: Mapped[str] = mapped_column(String(16))  # sent | failed | skipped
+    detail: Mapped[str] = mapped_column(Text, default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class SignalAssessment(Base):
+    """Score breakdown, hard-gate results, economics and verdict for a strategy signal."""
+
+    __tablename__ = "signal_assessments"
+
+    signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    breakdown: Mapped[list] = mapped_column(JSON, default=list)
+    gates: Mapped[list] = mapped_column(JSON, default=list)
+    verdict: Mapped[str] = mapped_column(String(24), index=True)  # NO_TRADE | WATCH | PAPER_TEST | RESEARCH_SUPPORTED
+    tier: Mapped[str] = mapped_column(String(12), index=True)     # REJECT | WATCH | CANDIDATE | ELIGIBLE
+    reliability: Mapped[str] = mapped_column(String(24), default="INSUFFICIENT_EVIDENCE")
+    reasons: Mapped[list] = mapped_column(JSON, default=list)
+    economics: Mapped[dict] = mapped_column(JSON, default=dict)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    model_version: Mapped[str] = mapped_column(String(24), default="score-v1")
+
+
+class SignalEvent(Base):
+    """Lifecycle transition of a signal (separate from order status)."""
+
+    __tablename__ = "signal_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    signal_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    state: Mapped[str] = mapped_column(String(24))
+    detail: Mapped[str] = mapped_column(Text, default="")
+
+
+class SignalOutcome(Base):
+    """What happened after a signal (shadow tracking, even if it was never traded)."""
+
+    __tablename__ = "signal_outcomes"
+
+    signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), default="OPEN", index=True)  # OPEN | TARGET | STOP | EXPIRED | NO_DATA
+    resolved_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    bars: Mapped[int] = mapped_column(Integer, default=0)
+    r_gross: Mapped[float | None] = mapped_column(Float, nullable=True)
+    r_net: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_favorable_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_adverse_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    traded: Mapped[bool] = mapped_column(Boolean, default=False)
+    checked_to: Mapped[datetime | None] = mapped_column(TS, nullable=True)

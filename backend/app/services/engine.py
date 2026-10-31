@@ -71,8 +71,12 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
         sig.status = "SIGNAL_ONLY"
         if not controls.get("auto_trading", True):
             sig.reasons = list(sig.reasons) + [{"check": "auto trading switched off", "passed": False}]
-        notify(f"📈 Signal {res.action} {symbol} {tf} (not traded: mode {mode})",
-               state.get(db, "notifications")["notify_signals"])
+        try:  # still score it, so research/shadow statistics include every signal
+            from . import assess
+            assess.lifecycle(db, sig.id, "DETECTED", f"signal only ({mode})")
+            assess.assess(db, sig)
+        except Exception:
+            log.exception("assessment failed for signal %s", sig.id)
         return sig
 
     dup = db.scalar(select(Order.id).where(Order.client_id == f"S{sig.id}-{mode}")) is not None
@@ -81,21 +85,20 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
     decision = risk_evaluate(ctx)
     sig.risk_checks = decision.checks
     sig.features = {**sig.features, "risk": {k: v for k, v in decision.to_dict().items() if k != "checks"}}
-    if not decision.approved:
-        sig.status = "REJECTED"
-        failed = [c["check"] for c in decision.checks if not c["passed"]]
-        event(db, "risk", f"{symbol} {tf} {res.action} rejected: {', '.join(failed)}", "INFO")
+    from . import assess
+    outcome, a = assess.route(db, sig, decision, ctx)
+    if outcome != "QUALIFIED":
+        if outcome in ("REJECTED", "BLOCKED_DATA"):
+            event(db, "risk", f"{symbol} {tf} {res.action} {outcome.lower()}: {'; '.join(a.reasons[:2])}", "INFO")
         return sig
-    if controls.get("require_approval", True):
-        sig.status = "AWAITING"
-        db.add(SignalApproval(signal_id=sig.id, expires_at=utcnow() + timedelta(minutes=int(controls.get("approval_minutes", 60))),
-                              snapshot={k: v for k, v in decision.to_dict().items() if k != "checks"}))
-        event(db, "approval", f"{symbol} {tf} {res.action} setup waiting for your approval", "INFO")
-        notify(f"🟡 Setup {res.action} {symbol} {tf} waiting for approval (SL {res.stop_loss:.5f}, TP {res.take_profit:.5f})",
-               any(state.get(db, "notifications")[k] for k in ("notify_signals", "notify_orders")))
+    # Real money always needs a human decision, whatever the approval switch says.
+    if controls.get("require_approval", True) or mode == "MT5_LIVE":
+        assess.request_approval(db, sig, decision, int(controls.get("approval_minutes", 60)))
+        event(db, "approval", f"{symbol} {tf} {res.action} setup waiting for your approval ({a.score}/100)", "INFO")
         return sig
     trading.place_order(db, sig, decision, mode)
     sig.status = "ORDERED"
+    assess.lifecycle(db, sig.id, "PAPER_ORDERED" if mode == "PAPER" else "ORDERED", mode)
     return sig
 
 
@@ -109,10 +112,9 @@ def log_smc_events(db: Session, symbol: str, tf: str, ind, cfg: dict) -> None:
     if "atr" not in ind:
         return
     window = ind.tail(250)
-    last_i = len(window) - 1
     rows = []
     for e in smc.analyze(window, cfg)["events"]:
-        if e["i"] < last_i - 3 or e["kind"] not in LOG_KINDS:
+        if e["kind"] not in LOG_KINDS or e["i"] < 20:  # skip the warm-up part of the window
             continue
         data = {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in e.items()
                 if k not in ("i", "time", "kind", "dir", "level", "price", "zone_low", "zone_high")}
@@ -123,12 +125,93 @@ def log_smc_events(db: Session, symbol: str, tf: str, ind, cfg: dict) -> None:
 
 
 def expire_approvals(db: Session) -> None:
+    from .alerts import raise_alert
+    from .assess import lifecycle
     now = utcnow()
+    for a in db.scalars(select(SignalApproval).where(SignalApproval.status == "WAITING", SignalApproval.expires_at < now + timedelta(minutes=10),
+                                                     SignalApproval.expires_at >= now)).all():
+        sig = db.get(Signal, a.signal_id)
+        raise_alert(db, "APPROVAL_EXPIRING", f"{sig.symbol if sig else ''} setup expires in <10 min", "Review it on Setups to approve.",
+                    dedup=f"expiring:{a.signal_id}", signal_id=a.signal_id, link="#/setups")
     for a in db.scalars(select(SignalApproval).where(SignalApproval.status == "WAITING", SignalApproval.expires_at < now)).all():
         a.status, a.decided_at, a.note = "EXPIRED", now, a.note or "not approved in time"
         sig = db.get(Signal, a.signal_id)
         if sig is not None and sig.status == "AWAITING":
             sig.status = "EXPIRED"
+            lifecycle(db, sig.id, "EXPIRED", "no decision before expiry")
+            raise_alert(db, "SIGNAL_EXPIRED", f"{sig.symbol} {sig.action} setup expired", "No decision was made in time — recorded for research.",
+                        dedup=f"exp:{sig.id}", symbol=sig.symbol, signal_id=sig.id)
+
+
+_periodic: dict = {}
+
+
+def every(name: str, seconds: float) -> bool:
+    import time as _t
+    if _t.time() - _periodic.get(name, 0) >= seconds:
+        _periodic[name] = _t.time()
+        return True
+    return False
+
+
+def research_jobs(db: Session) -> None:
+    """Data incidents, SMC event log, shadow outcomes, scheduled alerts and alert delivery (fail-safe)."""
+    from . import alerts, assess, quality
+    jobs = [("incidents", 30, quality.track_incidents), ("smc_log", 120, log_all_smc), ("outcomes", 60, assess.track_outcomes),
+            ("scheduled", 60, alerts.scheduled), ("reconcile", 300, reconcile_paper), ("deliver", 5, alerts.deliver_pending)]
+    for name, sec, fn in jobs:
+        if not every(name, sec):
+            continue
+        try:
+            fn(db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            log.exception("job %s failed", name)
+
+
+def log_all_smc(db: Session) -> None:
+    """Persist SMC detections for every watched market/timeframe, independent of the trading mode."""
+    from .indicators import add_indicators
+    cfg = state.get(db, "strategy")
+    cc = state.get(db, "crypto")
+    pairs = [(s, tf) for s in cfg["symbols"] for tf in cfg["timeframes"]] + [(s, tf) for s in cc.get("symbols", []) for tf in ("M15", "H1")]
+    for s, tf in pairs:
+        df = md.load_candles(db, s, tf, limit=260)
+        if len(df) < 60:
+            continue
+        key = (s, tf)
+        if _periodic.get(key) == df.index[-1]:
+            continue
+        log_smc_events(db, s, tf, add_indicators(df, cfg), cfg)
+        _periodic[key] = df.index[-1]
+
+
+def reconcile_paper(db: Session) -> None:
+    """Paper ledger check: balance must equal start + realized P&L of closed paper trades."""
+    from sqlalchemy import func
+
+    from ..models import DataIncident, Position
+    from .alerts import raise_alert
+    pa = state.get(db, "paper_account")
+    start = float(pa.get("start_balance", pa.get("initial_balance", 0)) or 0)
+    if not start:
+        return
+    q = select(func.coalesce(func.sum(Position.realized_pnl), 0)).where(Position.mode == "PAPER", Position.status == "CLOSED")
+    if pa.get("reset_at"):
+        from datetime import datetime as _dt
+        q = q.where(Position.closed_at >= _dt.fromisoformat(pa["reset_at"]))
+    realized = db.scalar(q) or 0
+    diff = round(float(pa["balance"]) - (start + float(realized)), 2)
+    key = "RECONCILIATION:PAPER"
+    open_inc = db.scalar(select(DataIncident).where(DataIncident.key == key, DataIncident.ended_at.is_(None)))
+    if abs(diff) > 0.05 and open_inc is None:
+        inc = DataIncident(key=key, kind="RECONCILIATION", symbol="", detail=f"paper balance differs from ledger by {diff:+.2f}")
+        db.add(inc)
+        db.flush()
+        raise_alert(db, "RECONCILIATION", "Paper ledger mismatch", inc.detail, severity="warning", dedup=f"rec:{inc.id}")
+    elif abs(diff) <= 0.05 and open_inc is not None:
+        open_inc.ended_at = utcnow()
 
 
 def tick(db: Session) -> None:
@@ -153,6 +236,15 @@ def tick(db: Session) -> None:
     except Exception as e:
         db.rollback()
         log.warning("news refresh failed: %s", e)
+    research_jobs(db)
+    from .livegate import is_approved
+    if mode == "MT5_LIVE" and not is_approved(db):
+        tr2 = state.get_locked(db, "trading")
+        tr2["mode"] = "MT5_DEMO"
+        state.put(db, "trading", tr2)
+        event(db, "risk", "Live gate approval expired or revoked: mode switched to BROKER DEMO", "WARNING")
+        db.commit()
+        mode = "MT5_DEMO"
     from .crypto import desk
     try:
         desk.tick(db)

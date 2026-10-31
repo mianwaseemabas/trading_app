@@ -26,6 +26,7 @@ x-app-env: &app-env
   SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
   SESSION_MAX_HOURS: ${SESSION_MAX_HOURS:-12}
   TZ: UTC
+  GIT_COMMIT: ${GIT_COMMIT:-unknown}
 
 services:
   db:

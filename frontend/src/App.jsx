@@ -20,6 +20,7 @@ import Overview from "./pages/Overview.jsx";
 import Setups from "./pages/Setups.jsx";
 import Smc from "./pages/Smc.jsx";
 import Terminal from "./pages/Terminal.jsx";
+import Alerts from "./pages/Alerts.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -28,6 +29,7 @@ const ROUTES = [
   { k: "terminal", label: "Terminal", icon: "◈", perm: "market.view", el: Terminal, flush: true },
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard },
   { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview },
+  { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live },
   { k: "news", label: "News", icon: "◉", perm: "market.view", el: News },
@@ -141,8 +143,24 @@ function ForcePasswordChange({ user, onDone }) {
   );
 }
 
+function Bell() {
+  const { data } = useApi("/alerts/count", { interval: 15000 });
+  const n = data?.unread || 0;
+  return <a href="#/alerts" className={`bell ${n ? "has" : ""}`} title={`${n} unread alerts`}>🔔{n > 0 && <span>{n > 99 ? "99+" : n}</span>}</a>;
+}
+
+function usePrivacy() {
+  const [on, setOn] = useState(() => { try { return localStorage.getItem("privacy") === "1"; } catch { return false; } });
+  useEffect(() => {
+    document.body.classList.toggle("privacy", on);
+    try { localStorage.setItem("privacy", on ? "1" : "0"); } catch { /* ignore */ }
+  }, [on]);
+  return [on, () => setOn(!on)];
+}
+
 function TopBar({ user, logout }) {
   const can = (p) => user.permissions.includes(p);
+  const [privacy, togglePrivacy] = usePrivacy();
   const { data } = useApi(can("dashboard.view") ? "/system/status" : null, { interval: 10000 });
   const tr = data?.trading;
   return (
@@ -155,7 +173,9 @@ function TopBar({ user, logout }) {
         {data && data.reconciliation && !data.reconciliation.ok && <Badge tone="bad" title={data.reconciliation.detail}>RECONCILIATION</Badge>}
       </div>
       <div className="row gap">
-        <span className="muted small">{user.full_name || user.username}{user.is_admin ? " · admin" : ""}</span>
+        {can("dashboard.view") && <Bell />}
+        <button className="btn ghost sm" title="Hide personal and account details (for screenshots)" onClick={togglePrivacy}>{privacy ? "🙈 private" : "👁 details"}</button>
+        <span className="muted small pii">{user.full_name || user.username}{user.is_admin ? " · admin" : ""}</span>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
       </div>
     </header>

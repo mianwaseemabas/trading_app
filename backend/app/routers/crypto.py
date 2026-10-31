@@ -130,6 +130,9 @@ def put_settings(body: SettingsIn, request: Request, user: User = Depends(requir
             raise HTTPException(400, f"Save {ex.LABELS[c['exchange']]} API keys first")
         if body.mode == "LIVE" and not (body.allow_real or c.get("allow_real")):
             raise HTTPException(400, "Tick 'Allow real-money crypto orders' first")
+        from ..services.livegate import is_approved
+        if body.mode == "LIVE" and not is_approved(db):
+            raise HTTPException(400, "Real-money crypto needs the live-trading gate (Risk & Strategy) approved first")
         changes["mode"] = (c["mode"], body.mode)
         c["mode"] = body.mode
     if body.symbols is not None:

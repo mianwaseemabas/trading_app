@@ -66,6 +66,48 @@ function Breakdown({ data }) {
   );
 }
 
+function Insights({ mode }) {
+  const { data: d } = useApi(`/performance/insights?mode=${mode}&days=365`, { deps: [mode] });
+  const { data: cmp } = useApi("/strategies/compare");
+  if (!d) return null;
+  const maxF = Math.max(1, ...d.funnel.map((f) => f.count));
+  return (
+    <div className="grid two">
+      <Card title={`Monthly result · ${modeLabel(mode)}`}>
+        <Table rows={d.monthly.map((m) => ({ ...m, id: m.month }))} empty="No closed trades" cols={[
+          { label: "Month", k: "month" }, { label: "Trades", k: "trades", num: true },
+          { label: "Win %", num: true, render: (m) => fmt.pct((m.wins / m.trades) * 100, 0) },
+          { label: "Costs", num: true, render: (m) => fmt.money(m.costs) },
+          { label: "Net", num: true, render: (m) => <b className={pnlClass(m.net)}>{fmt.money(m.net)}</b> },
+        ]} />
+        <p className="small muted">Max drawdown over the year: {fmt.money(d.max_drawdown)}. Progress can mean smaller losses and better process, not only profit.</p>
+      </Card>
+      <Card title="Signal → execution funnel (last 12 months)">
+        {d.funnel.map((f) => (
+          <div key={f.stage} className="small" style={{ marginBottom: 6 }}>
+            <div className="row between"><span>{f.stage}</span><b>{f.count}</b></div>
+            <div className="tbar" style={{ background: "var(--line2)" }}><div style={{ width: `${(f.count / maxF) * 100}%`, background: "var(--accent)" }} /></div>
+          </div>
+        ))}
+        <p className="tiny muted">Shadow outcomes of all signals: {Object.entries(d.shadow_outcomes).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(" · ") || "none yet"}</p>
+      </Card>
+      {cmp && (
+        <Card title="Baseline vs challenger (every signal, traded or not, net of estimated costs)" className="span2">
+          <Table rows={cmp.strategies.map((x) => ({ ...x, id: x.strategy }))} cols={[
+            { label: "Strategy", render: (x) => <span><b>{x.strategy}</b>{x.strategy === cmp.live && <Badge tone="info">live</Badge>}</span> },
+            { label: "Resolved signals", num: true, k: "n" },
+            { label: "Win rate (95% CI)", render: (x) => (x.n ? `${x.win_rate_pct}% (${x.win_rate_ci95?.join("–")})` : "—") },
+            { label: "Expectancy R (95% CI)", render: (x) => (x.n ? `${x.expectancy_r} (${x.expectancy_ci95?.join(" to ") || "n/a"})` : "—") },
+            { label: "Profit factor", num: true, render: (x) => x.profit_factor ?? "—" },
+            { label: "Verdict", render: (x) => <Badge tone={x.reliability === "PAPER_CANDIDATE" ? "ok" : "muted"}>{x.reliability.replace(/_/g, " ").toLowerCase()}</Badge> },
+          ]} />
+          <p className="tiny muted">{cmp.note} Promote a strategy only when its out-of-sample evidence is clearly better — never because of a few wins.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function Trades() {
   const [detail, setDetail] = useState(null);
   const [tab, setTab] = useState("performance");
@@ -90,6 +132,7 @@ export default function Trades() {
           <p className="muted small">{perf?.note}</p>
         </Card>
       )}
+      {tab === "performance" && <Insights mode={mode} />}
       {tab === "performance" && <Breakdown data={perf?.breakdown} />}
       {tab === "orders" && <Card title="Orders"><Table rows={orders} cols={ORDER_COLS} /></Card>}
       {tab === "closed" && <Card title="Closed positions — click a row for chart & journal" actions={<a className="btn sm" href="/api/positions/export.csv">⬇ Export CSV</a>}><Table rows={closed} cols={CLOSED_COLS} onRow={(p) => setDetail(p.id)} /></Card>}

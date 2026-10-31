@@ -40,6 +40,12 @@ def spec_of(inst: Instrument) -> InstrumentSpec:
     )
 
 
+def trades_today(db: Session, mode: str) -> int:
+    day0 = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return db.scalar(select(func.count()).select_from(Order).where(Order.mode == mode, Order.action == "OPEN",
+                                                                  Order.status.in_(["FILLED", "SENT", "PENDING"]), Order.created_at >= day0)) or 0
+
+
 def is_fx(inst: Instrument | None) -> bool:
     """Forex pairs carry a base currency; stocks, indices, commodities and CFDs do not."""
     return bool(inst is None or inst.currency_base)
@@ -236,8 +242,12 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
         extra.append(("inside trading hours", inside, f"{h:02d}:00 UTC, allowed {a:02d}:00–{b:02d}:00"))
     news_ok, news_detail = news_check(db, symbol, controls)
     extra.append(("no high-impact news window", news_ok, news_detail))
+    if mode == "MT5_LIVE":
+        from .livegate import is_approved
+        extra.append(("live gate approved and not expired", is_approved(db), "real money needs a current live-gate approval"))
     cfg = asset_cfg(cfg, inst, q.ask if q else 0)
     return RiskContext(
+        trades_today=trades_today(db, mode),
         side=side,
         extra_checks=extra,
         symbol=symbol,
@@ -319,6 +329,8 @@ def paper_fill(db: Session, o: Order) -> None:
     db.add(pos)
     db.flush()
     attach_management(db, pos, management_for_order(db, o))
+    audit(db, "order.filled", entity="order", entity_id=o.client_id,
+          details={"mode": "PAPER", "symbol": o.symbol, "side": o.side, "volume": o.volume, "price": price, "sl": o.stop_loss, "tp": o.take_profit})
 
 
 def close_paper_position(db: Session, p: Position, price: float, reason: str) -> None:
