@@ -117,6 +117,10 @@ class Exchange:
     def book(self, symbol: str) -> tuple[float, float]: ...
     def change_24h(self, symbol: str) -> float | None: return None
     def klines(self, symbol: str, tf: str, limit: int = 300) -> list[dict]: ...
+
+    def history(self, symbol: str, tf: str, days: int, max_calls: int = 60) -> list[dict]:
+        """Older candles by paging backwards (public data). Default: only the latest batch."""
+        return self.klines(symbol, tf, 1000)
     def balances(self) -> dict[str, float]: ...
     def market_buy(self, symbol: str, qty: float, client_id: str) -> Fill: ...
     def market_sell(self, symbol: str, qty: float, client_id: str) -> Fill: ...
@@ -185,6 +189,22 @@ class Binance(Exchange):
         rows = self._pub("/api/v3/klines", {"symbol": symbol, "interval": TF[tf][0], "limit": min(limit, 1000)})
         return [{"time": datetime.fromtimestamp(r[0] / 1000, timezone.utc), "open": float(r[1]), "high": float(r[2]),
                  "low": float(r[3]), "close": float(r[4]), "tick_volume": float(r[5])} for r in rows]
+
+    def history(self, symbol, tf, days, max_calls=60):
+        step = {"M15": 900, "H1": 3600, "H4": 14400, "D1": 86400}[tf] * 1000
+        end = int(time.time() * 1000)
+        start = end - days * 86400 * 1000
+        out, cur = [], start
+        for _ in range(max_calls):
+            rows = self._pub("/api/v3/klines", {"symbol": symbol, "interval": TF[tf][0], "startTime": cur, "limit": 1000})
+            if not rows:
+                break
+            out += [{"time": datetime.fromtimestamp(r[0] / 1000, timezone.utc), "open": float(r[1]), "high": float(r[2]),
+                     "low": float(r[3]), "close": float(r[4]), "tick_volume": float(r[5])} for r in rows]
+            cur = rows[-1][0] + step
+            if cur >= end or len(rows) < 1000:
+                break
+        return out
 
     def balances(self):
         d = self._priv("GET", "/api/v3/account", {})
@@ -330,6 +350,23 @@ class Okx(Exchange):
                 "low": float(r[3]), "close": float(r[4]), "tick_volume": float(r[5])} for r in rows if len(r) < 9 or r[8] == "1"]
         return sorted(out, key=lambda x: x["time"])
 
+    def history(self, symbol, tf, days, max_calls=60):
+        stop = (time.time() - days * 86400) * 1000
+        out, after = [], None
+        for _ in range(max_calls):
+            p = {"instId": self.inst(symbol), "bar": TF[tf][1], "limit": 100}
+            if after:
+                p["after"] = after
+            rows = self._req("GET", "/api/v5/market/history-candles", p)
+            if not rows:
+                break
+            out += [{"time": datetime.fromtimestamp(int(r[0]) / 1000, timezone.utc), "open": float(r[1]), "high": float(r[2]),
+                     "low": float(r[3]), "close": float(r[4]), "tick_volume": float(r[5])} for r in rows if len(r) < 9 or r[8] == "1"]
+            after = rows[-1][0]
+            if int(after) <= stop:
+                break
+        return sorted(out, key=lambda x: x["time"])
+
     def balances(self):
         d = self._req("GET", "/api/v5/account/balance", private=True)
         return {x["ccy"]: float(x.get("cashBal") or x.get("eq") or 0) for x in (d[0].get("details", []) if d else [])
@@ -437,6 +474,23 @@ class Bybit(Exchange):
         out = [{"time": datetime.fromtimestamp(int(r[0]) / 1000, timezone.utc), "open": float(r[1]), "high": float(r[2]),
                 "low": float(r[3]), "close": float(r[4]), "tick_volume": float(r[5])} for r in rows]
         return sorted(out, key=lambda x: x["time"])
+
+    def history(self, symbol, tf, days, max_calls=60):
+        stop = (time.time() - days * 86400) * 1000
+        out, end = [], None
+        for _ in range(max_calls):
+            p = {"category": "spot", "symbol": symbol, "interval": TF[tf][2], "limit": 1000}
+            if end:
+                p["end"] = end
+            rows = self._req("GET", "/v5/market/kline", p)["list"]
+            if not rows:
+                break
+            out += [{"time": datetime.fromtimestamp(int(r[0]) / 1000, timezone.utc), "open": float(r[1]), "high": float(r[2]),
+                     "low": float(r[3]), "close": float(r[4]), "tick_volume": float(r[5])} for r in rows]
+            end = int(rows[-1][0]) - 1
+            if end <= stop or len(rows) < 1000:
+                break
+        return sorted({x["time"]: x for x in out}.values(), key=lambda x: x["time"])
 
     def balances(self):
         d = self._req("GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"}, private=True)["list"]

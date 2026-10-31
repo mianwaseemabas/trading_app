@@ -24,17 +24,7 @@ from .indicators import add_indicators
 MODEL = "score-v1"
 
 
-def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    up = df["high"].diff()
-    dn = -df["low"].diff()
-    plus = up.where((up > dn) & (up > 0), 0.0)
-    minus = dn.where((dn > up) & (dn > 0), 0.0)
-    tr = pd.concat([df["high"] - df["low"], (df["high"] - df["close"].shift()).abs(), (df["low"] - df["close"].shift()).abs()], axis=1).max(axis=1)
-    atr = tr.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    pdi = 100 * plus.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr
-    mdi = 100 * minus.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr
-    dx = (100 * (pdi - mdi).abs() / (pdi + mdi)).replace([math.inf, -math.inf], float("nan"))
-    return dx.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+from .strategies_extra import adx  # noqa: E402
 
 
 def lifecycle(db: Session, sig_id: int, st: str, detail: str = "") -> None:

@@ -28,6 +28,10 @@ NAME = "trend_pullback"
 STRATEGIES = {
     "trend_pullback": "EMA trend + MACD momentum pullback (baseline)",
     "smc_sweep_bos": "SMC: liquidity sweep → BOS/CHoCH with displacement → FVG/order-block retest",
+    "donchian_breakout": "Donchian 20-candle breakout with EMA 200 + ADX filter (trend following)",
+    "rsi2_meanrev": "RSI-2 pullback in an uptrend (mean reversion, higher win rate, smaller wins)",
+    "bb_squeeze": "Bollinger squeeze → breakout (volatility expansion)",
+    "ema_cross_adx": "EMA 9/21 cross with MACD + ADX filter (momentum)",
 }
 
 
@@ -49,6 +53,9 @@ def _f(x) -> float | None:
         return None
 
 
+EXTRA = {"donchian_breakout", "rsi2_meanrev", "bb_squeeze", "ema_cross_adx"}
+
+
 def prepare(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Add everything the configured strategy needs (indicators, SMC columns)."""
     from .indicators import add_indicators
@@ -56,6 +63,9 @@ def prepare(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     if cfg.get("name") == "smc_sweep_bos":
         from .smc import signals
         ind = signals(ind, cfg)
+    elif cfg.get("name") in EXTRA:
+        from . import strategies_extra
+        ind = strategies_extra.prepare(ind, cfg["name"])
     return ind
 
 
@@ -63,6 +73,12 @@ def evaluate(df: pd.DataFrame, i: int, cfg: dict) -> StrategyResult:
     """Evaluate the configured strategy on row i of a DataFrame returned by prepare()."""
     if cfg.get("name") == "smc_sweep_bos":
         return _smc_evaluate(df, i, cfg)
+    if cfg.get("name") in EXTRA:
+        from . import strategies_extra
+        if "adx" not in df:
+            df = strategies_extra.prepare(df, cfg["name"])
+        a, e, sl, tp, feats, reasons = strategies_extra.evaluate(df, i, cfg["name"])
+        return StrategyResult(a, e, sl, tp, feats, reasons)
     return _trend_evaluate(df, i, cfg)
 
 

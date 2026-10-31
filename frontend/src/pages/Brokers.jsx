@@ -188,8 +188,14 @@ function CryptoCard() {
         <div className="row gap"><input value={syms ?? c.symbols.join(", ")} onChange={(e) => setSyms(e.target.value.toUpperCase())} />
           <button className="btn sm" disabled={syms === null} onClick={() => run(() => api.put("/crypto/settings", { symbols: syms.split(",").map((x) => x.trim()).filter(Boolean) }), "Saved").then(() => { setSyms(null); reload(); }).catch(() => {})}>Save</button></div>
       </Field>
+      <Field label="Crypto strategy" hint="Compare them on the Strategy lab page first">
+        <select value={c.strategy || ""} onChange={(e) => run(() => api.put("/crypto/settings", { strategy: e.target.value }), "Crypto strategy saved").then(reload).catch(() => {})}>
+          <option value="">Same as forex</option>
+          {Object.entries(CRYPTO_STRATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </Field>
       <div className="row gap wrap small">
-        <label className="check"><input type="checkbox" checked={!!c.signals} onChange={(e) => run(() => api.put("/crypto/settings", { signals: e.target.checked }), "Saved").then(reload)} /> Strategy looks for setups on crypto too (you approve each one)</label>
+        <label className="check"><input type="checkbox" checked={!!c.signals} onChange={(e) => run(() => api.put("/crypto/settings", { signals: e.target.checked }), "Saved").then(reload)} /> Strategy looks for setups on crypto too (you approve each one, unless auto-trade is on)</label>
         <span className="muted">Practice cash: {fmt.money(c.paper_cash)} USDT</span>
         <button className="btn sm ghost" onClick={() => { const v = window.prompt("Reset practice account to how many USDT?", "100"); if (v) run(() => api.put("/crypto/settings", { paper_reset: Number(v) }), "Practice account reset").then(reload).catch(() => {}); }}>Reset practice</button>
       </div>
@@ -213,6 +219,15 @@ function CryptoCard() {
     </Card>
   );
 }
+
+const CRYPTO_STRATS = {
+  donchian_breakout: "Donchian breakout (trend, win ~30–45%, big winners)",
+  rsi2_meanrev: "RSI-2 pullback (mean reversion, win ~55–70%, small winners)",
+  bb_squeeze: "Bollinger squeeze breakout",
+  ema_cross_adx: "EMA 9/21 cross + ADX (momentum)",
+  trend_pullback: "EMA trend pullback (baseline)",
+  smc_sweep_bos: "SMC sweep → BOS → retest",
+};
 
 export default function Brokers() {
   const { data, reload } = useApi("/brokers", { interval: 5000 });

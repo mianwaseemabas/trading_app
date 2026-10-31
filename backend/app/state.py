@@ -103,20 +103,24 @@ DEFAULTS: dict[str, Any] = {
         "ctrader": {"client_id": "", "client_secret_enc": "", "access_token_enc": "", "refresh_token_enc": "", "account_login": ""},
     },
     # Trading on/off switches and filters (Live trading page control bar).
-    "crypto": {"mode": "OFF", "exchange": "binance", "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "crypto": {"mode": "OFF", "exchange": "binance", "strategy": "", "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
                "timeframes": ["M15", "H1", "H4", "D1"], "signal_timeframes": ["H1"], "paper_cash": 100.0, "paper_start": 100.0,
                "fee_pct": 0.1, "max_spread_pct": 0.15, "slippage_pct": 0.05, "allow_real": False, "signals": True},
     "crypto_keys": {"binance": {}, "okx": {}, "bybit": {}},
     "crypto_status": {"market_ok": False, "market_error": "", "market_at": "", "changes": {}, "balances": {}, "keys_ok": False,
                       "keys_error": ""},
     "favorites": [],
-    "alert_prefs": {"channels": {"telegram": ["APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED",
+    "news_feeds": [],
+    "headline_status": {"at": "", "feeds": {}},
+    "strategy_lab": {"status": "NEVER_RUN", "results": [], "skipped": []},
+    "alert_prefs": {"channels": {"telegram": ["SIGNAL_QUALIFIED", "AUTO_TRADE", "MARKET_NEWS", "ORDER_FILLED", "APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED",
                                               "BROKER_DISCONNECTED", "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "RECONCILIATION",
                                               "DAILY_SUMMARY", "WEEKLY_REVIEW"],
-                                 "email": ["LOSS_LIMIT_REACHED", "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "DAILY_SUMMARY"]},
+                                 "email": ["AUTO_TRADE", "LOSS_LIMIT_REACHED", "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "DAILY_SUMMARY"]},
                     "telegram": {}, "email": {}},
     "assessment": {"min_watch": 60, "min_candidate": 70, "min_eligible": 80, "min_sample": 30, "approval_min_tier": "WATCH"},
-    "controls": {"require_approval": True, "approval_minutes": 60,
+    "controls": {"require_approval": True, "approval_minutes": 60, "auto_execute": {}, "auto_min_verdict": "PAPER_TEST",
+                 "auto_min_score": 70,
         "auto_trading": True,  # strategy may place orders (when the mode allows orders)
         "manual_trading": True,  # manual order ticket allowed
         "disabled_symbols": [],  # symbols where no new orders are opened

@@ -63,6 +63,7 @@ export default function News() {
           );
         })}
       </Card>
+      <Headlines />
       <Card title="How to use news (expert tip)">
         <ul className="small">
           <li>Before trading a pair, check both of its currencies here (EURUSD = EUR and USD).</li>
@@ -72,5 +73,56 @@ export default function News() {
         </ul>
       </Card>
     </div>
+  );
+}
+
+function Headlines() {
+  const { can } = useAuth();
+  const [impact, setImpact] = useState("High,Medium");
+  const [mine, setMine] = useState(true);
+  const [cat, setCat] = useState("");
+  const { data, reload } = useApi(`/news/headlines?hours=48&impact=${impact}&mine=${mine}${cat ? `&category=${encodeURIComponent(cat)}` : ""}`,
+    { interval: 120000, deps: [impact, mine, cat] });
+  const [run, busy] = useAction();
+  return (
+    <Card title="Market headlines (central banks, forex, crypto, business)" actions={
+      <>
+        <select value={impact} onChange={(e) => setImpact(e.target.value)}>
+          <option value="High">High impact only</option><option value="High,Medium">High + Medium</option><option value="High,Medium,Low">All</option>
+        </select>
+        <select value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="">All sources</option><option value="central bank">Central banks</option><option value="forex">Forex</option>
+          <option value="crypto">Crypto</option><option value="business">Business</option>
+        </select>
+        <label className="small"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> only my markets</label>
+        {can("system.settings") && <button className="btn sm" disabled={busy} onClick={() => run(() => api.post("/news/headlines/refresh"), "Headlines refreshed").then(reload)}>Refresh</button>}
+      </>
+    }>
+      {!data ? <p className="muted">Loading…</p> : <>
+        <p className="muted small">
+          Updated every 10 minutes. {data.note} High-impact headlines about your markets ({data.watched.join(", ")}) also arrive as alerts
+          (Telegram/email if switched on in <a href="#/alerts">Alerts</a>).
+        </p>
+        <div className="chips">
+          {Object.entries(data.status.feeds || {}).map(([n, v]) => (
+            <span key={n} className={`chip ${v.ok ? "on" : "off"}`} title={v.ok ? `${v.items} recent items` : v.error}>{n} {v.ok ? "✓" : "✕"}</span>
+          ))}
+        </div>
+        {data.items.length === 0 && <p className="muted">No headlines for this filter yet.</p>}
+        {data.items.map((h) => (
+          <div key={h.id} className="headline">
+            <div>
+              <Badge tone={impactTone(h.impact)}>{h.impact}</Badge>{" "}
+              <a href={h.url} target="_blank" rel="noopener noreferrer"><b>{h.title}</b></a>
+            </div>
+            <div className="small muted">
+              {h.source} · {fmt.dt(h.published)} {h.assets.length > 0 && <>· affects <b>{h.assets.join(", ")}</b></>}
+              {h.tags.length > 0 && <> · keywords: {h.tags.join(", ")}</>}
+            </div>
+            {h.summary && <div className="small">{h.summary.slice(0, 220)}{h.summary.length > 220 ? "…" : ""}</div>}
+          </div>
+        ))}
+      </>}
+    </Card>
   );
 }

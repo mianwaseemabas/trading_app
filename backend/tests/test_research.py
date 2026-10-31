@@ -150,7 +150,7 @@ def test_smc_scan_overview_strategy_switch(c, db):
     assert body["candles"] and body["state"]["trend"] in ("bullish", "bearish", "undefined")
     ov = c.get("/api/market/overview").json()
     assert ov["sessions"]["sessions"] and ov["symbols"][0]["symbol"] == "EURUSD"
-    assert {s["name"] for s in c.get("/api/system/strategies").json()} == {"trend_pullback", "smc_sweep_bos"}
+    assert {s["name"] for s in c.get("/api/system/strategies").json()} >= {"trend_pullback", "smc_sweep_bos", "rsi2_meanrev", "donchian_breakout"}
     cur = c.get("/api/system/strategy").json()
     new = c.put("/api/system/strategy", json={"values": {"name": "smc_sweep_bos"}}).json()
     assert new["name"] == "smc_sweep_bos" and new["version"] != cur["version"]

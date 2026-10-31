@@ -104,8 +104,7 @@ export default function Setups() {
     <div className="stack">
       <Card title="Approval rule" actions={st && <Badge tone="info">Mode: {modeLabel(st.trading.mode)}</Badge>}>
         <div className="row gap wrap">
-          <Switch on={ctl.require_approval} disabled={!can("trading.control")} label="Ask me before the strategy places any trade"
-            onChange={(v) => run(() => api.put("/live/controls", { require_approval: v }), v ? "Approval required" : "Strategy trades automatically").then(reload)} />
+          <span className="small">Auto-trade (no approval) is set per account in <a href="#/lab">Strategy lab</a>; everything else waits here.</span>
           <span className="small muted">A setup waits
             <select disabled={!can("trading.control")} value={ctl.approval_minutes || 60} onChange={(e) => run(() => api.put("/live/controls", { approval_minutes: Number(e.target.value) }), "Saved").then(reload)}>
               {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m} min</option>)}

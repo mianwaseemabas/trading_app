@@ -514,3 +514,21 @@ class SignalOutcome(Base):
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     traded: Mapped[bool] = mapped_column(Boolean, default=False)
     checked_to: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+
+
+class NewsHeadline(Base):
+    """Market-moving headlines from RSS/Atom feeds (central banks, forex, crypto, business)."""
+
+    __tablename__ = "news_headlines"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    url: Mapped[str] = mapped_column(String(500), unique=True)
+    source: Mapped[str] = mapped_column(String(64))
+    category: Mapped[str] = mapped_column(String(16), default="")
+    title: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    published: Mapped[datetime] = mapped_column(TS, index=True)
+    impact: Mapped[str] = mapped_column(String(8), default="Low", index=True)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    assets: Mapped[list] = mapped_column(JSON, default=list)
+    fetched_at: Mapped[datetime] = mapped_column(TS, default=utcnow)

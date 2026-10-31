@@ -113,3 +113,18 @@ def test_bybit_stop_order_and_errors():
     assert all(c["path"].startswith("/v5") for c in f.calls)
     with pytest.raises(ex.ExchangeError):
         ex.Bybit("", "", http=f).balances()
+
+
+def test_binance_history_pages_forward():
+    import time as _t
+    now = int(_t.time() * 1000)
+    step = 3600_000
+
+    def kl(c):
+        start = int(c["query"]["startTime"])
+        rows = [[t, "1", "2", "0.5", "1.5", "10"] for t in range(start, min(start + 1000 * step, now), step)]
+        return rows
+    f = Fake({("GET", "/api/v3/klines"): kl})
+    rows = ex.Binance("", "", http=f).history("BTCUSDT", "H1", 90)
+    assert len(f.calls) == 3 and 2150 <= len(rows) <= 2170  # 90 days of hourly candles in 3 pages
+    assert all(rows[i]["time"] < rows[i + 1]["time"] for i in range(len(rows) - 1))

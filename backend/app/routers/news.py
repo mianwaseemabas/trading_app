@@ -44,3 +44,36 @@ def refresh(user: User = Depends(require("system.settings")), db: Session = Depe
     except Exception as e:
         raise HTTPException(502, f"Calendar fetch failed: {e}")
     return state.get(db, "news_status")
+
+
+# ------------------------------------------------------------ headlines
+@router.get("/headlines")
+def list_headlines(hours: int = Query(48, ge=1, le=720), impact: str | None = None, asset: str | None = None,
+                   category: str | None = None, mine: bool = False, limit: int = Query(200, le=500),
+                   user: User = Depends(require("market.view")), db: Session = Depends(get_db)):
+    from ..models import NewsHeadline
+    from ..services import headlines as hl
+    q = select(NewsHeadline).where(NewsHeadline.published >= utcnow() - timedelta(hours=hours))
+    if impact:
+        q = q.where(NewsHeadline.impact.in_(impact.split(",")))
+    if category:
+        q = q.where(NewsHeadline.category == category)
+    rows = db.scalars(q.order_by(NewsHeadline.published.desc()).limit(1000)).all()
+    watched = hl.watched_assets(db)
+    if asset:
+        rows = [r for r in rows if asset.upper() in r.assets]
+    if mine:
+        rows = [r for r in rows if set(r.assets) & watched]
+    return {"items": [{"id": r.id, "source": r.source, "category": r.category, "title": r.title, "summary": r.summary, "url": r.url,
+                       "published": r.published, "impact": r.impact, "tags": r.tags, "assets": r.assets,
+                       "yours": bool(set(r.assets) & watched)} for r in rows[:limit]],
+            "status": state.get(db, "headline_status"), "watched": sorted(watched),
+            "note": "Impact is a keyword rule (shown under each headline), not a prediction. Check the source before acting."}
+
+
+@router.post("/headlines/refresh")
+def refresh_headlines(user: User = Depends(require("system.settings")), db: Session = Depends(get_db)):
+    from ..services import headlines as hl
+    st = hl.refresh(db, force=True)
+    db.commit()
+    return st

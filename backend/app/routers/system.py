@@ -145,6 +145,7 @@ def pilot_preset(request: Request, user: User = Depends(require("risk.edit")), d
     state.put(db, "risk", new, by=user.username)
     c = state.get_locked(db, "controls")
     c["require_approval"] = True
+    c["auto_execute"] = {}
     state.put(db, "controls", c, by=user.username)
     audit(db, "risk.pilot_preset", user=user, ip=client_ip(request), details={"changes": changes})
     db.commit()

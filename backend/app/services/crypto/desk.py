@@ -407,7 +407,9 @@ def evaluate_signals(db: Session) -> None:
     mode = pos_mode(db)
     if not c.get("signals", True):
         return
-    scfg = state.get(db, "strategy")
+    scfg = {**state.get(db, "strategy")}
+    if c.get("strategy"):
+        scfg["name"] = c["strategy"]
     for sym in c["symbols"]:
         for tf in c.get("signal_timeframes", ["H1"]):
             df = md.load_candles(db, sym, tf, limit=required_history(scfg) + 50)
@@ -445,6 +447,14 @@ def evaluate_signals(db: Session) -> None:
             if outcome != "QUALIFIED":
                 continue
             controls = state.get(db, "controls")
+            from ..automation import announce, auto_ok
+            if auto_ok(db, mode, _a):
+                p, _checks, _ = place(db, symbol=sym, sl=sig.stop_loss, tp=sig.take_profit, by="auto", source=sig.strategy, signal=sig)
+                if p is not None:
+                    sig.status = "ORDERED"
+                    assess.lifecycle(db, sig.id, "AUTO_ORDERED", f"{mode} · no approval (auto-trade on)")
+                    announce(db, sig, p.volume, p.open_price, mode)
+                    continue
             assess.request_approval(db, sig, d, int(controls.get("approval_minutes", 60)))
 
 

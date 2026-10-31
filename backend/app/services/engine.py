@@ -91,14 +91,15 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
         if outcome in ("REJECTED", "BLOCKED_DATA"):
             event(db, "risk", f"{symbol} {tf} {res.action} {outcome.lower()}: {'; '.join(a.reasons[:2])}", "INFO")
         return sig
-    # Real money always needs a human decision, whatever the approval switch says.
-    if controls.get("require_approval", True) or mode == "MT5_LIVE":
+    from .automation import announce, auto_ok
+    if not auto_ok(db, mode, a):
         assess.request_approval(db, sig, decision, int(controls.get("approval_minutes", 60)))
         event(db, "approval", f"{symbol} {tf} {res.action} setup waiting for your approval ({a.score}/100)", "INFO")
         return sig
-    trading.place_order(db, sig, decision, mode)
+    o = trading.place_order(db, sig, decision, mode)
     sig.status = "ORDERED"
-    assess.lifecycle(db, sig.id, "PAPER_ORDERED" if mode == "PAPER" else "ORDERED", mode)
+    assess.lifecycle(db, sig.id, "AUTO_ORDERED", f"{mode} · no approval (auto-trade on)")
+    announce(db, sig, o.filled_volume or o.volume, o.fill_price or o.requested_price, mode)
     return sig
 
 
@@ -156,9 +157,9 @@ def every(name: str, seconds: float) -> bool:
 
 def research_jobs(db: Session) -> None:
     """Data incidents, SMC event log, shadow outcomes, scheduled alerts and alert delivery (fail-safe)."""
-    from . import alerts, assess, quality
+    from . import alerts, assess, headlines, quality
     jobs = [("incidents", 30, quality.track_incidents), ("smc_log", 120, log_all_smc), ("outcomes", 60, assess.track_outcomes),
-            ("scheduled", 60, alerts.scheduled), ("reconcile", 300, reconcile_paper), ("deliver", 5, alerts.deliver_pending)]
+            ("scheduled", 60, alerts.scheduled), ("headlines", 60, headlines.refresh), ("reconcile", 300, reconcile_paper), ("deliver", 5, alerts.deliver_pending)]
     for name, sec, fn in jobs:
         if not every(name, sec):
             continue

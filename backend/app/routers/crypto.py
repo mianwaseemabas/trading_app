@@ -100,6 +100,7 @@ class SettingsIn(BaseModel):
     exchange: str | None = None
     symbols: list[str] | None = None
     signal_timeframes: list[str] | None = None
+    strategy: str | None = None
     allow_real: bool | None = None
     signals: bool | None = None
     fee_pct: float | None = Field(default=None, ge=0, le=1)
@@ -145,6 +146,12 @@ def put_settings(body: SettingsIn, request: Request, user: User = Depends(requir
         if not body.signal_timeframes or not set(body.signal_timeframes) <= {"M15", "H1", "H4", "D1"}:
             raise HTTPException(400, "signal timeframes must be among M15, H1, H4, D1")
         c["signal_timeframes"] = body.signal_timeframes
+    if body.strategy is not None:
+        from ..services.strategy import STRATEGIES
+        if body.strategy and body.strategy not in STRATEGIES:
+            raise HTTPException(400, f"Unknown strategy; choose one of {list(STRATEGIES)}")
+        changes["strategy"] = (c.get("strategy"), body.strategy)
+        c["strategy"] = body.strategy
     for k in ("allow_real", "signals", "fee_pct", "max_spread_pct"):
         v = getattr(body, k)
         if v is not None and v != c.get(k):

@@ -24,7 +24,8 @@ from ..models import Alert, AlertDelivery, utcnow
 log = logging.getLogger("alerts")
 
 TYPES = {
-    "SIGNAL_QUALIFIED": "A setup passed the score threshold", "SIGNAL_REJECTED": "A setup was rejected (with reasons)",
+    "SIGNAL_QUALIFIED": "Trade opportunity: a setup passed the score and all hard checks (with timeframe and validity)",
+    "AUTO_TRADE": "A trade was placed automatically (auto-trade on)", "MARKET_NEWS": "High-impact market headline for your markets", "SIGNAL_REJECTED": "A setup was rejected (with reasons)",
     "SIGNAL_EXPIRED": "A setup expired without a decision", "APPROVAL_REQUIRED": "A setup waits for your approval",
     "APPROVAL_EXPIRING": "A setup expires in 10 minutes", "ENTRY_TRIGGERED": "A pending limit/stop order triggered",
     "ORDER_FILLED": "Order filled", "ORDER_REJECTED": "Order rejected", "STOP_HIT": "Stop-loss hit",
@@ -35,7 +36,7 @@ TYPES = {
     "MODE_CHANGED": "Trading mode changed", "PROTECTION_FAILURE": "A stop-loss could not be placed / emergency",
     "RECONCILIATION": "Ledger or broker reconciliation mismatch", "DAILY_SUMMARY": "Daily summary", "WEEKLY_REVIEW": "Weekly review reminder",
 }
-DEFAULT_EXTERNAL = ["APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED", "BROKER_DISCONNECTED",
+DEFAULT_EXTERNAL = ["SIGNAL_QUALIFIED", "AUTO_TRADE", "MARKET_NEWS", "APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED", "BROKER_DISCONNECTED",
                     "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "RECONCILIATION", "DAILY_SUMMARY", "WEEKLY_REVIEW"]
 
 
@@ -90,12 +91,20 @@ def from_audit(db: Session, action: str, entity_id: str, details: dict) -> None:
 def signal_text(sig, assessment=None, risk: dict | None = None, label: str = "PAPER SIGNAL") -> tuple[str, str]:
     dg = 3 if sig.symbol.endswith("JPY") else (2 if sig.symbol.endswith(("USDT", "USDC")) else 5)
     f = lambda v: "unavailable" if v is None else f"{v:.{dg}f}"  # noqa: E731
-    title = f"QIVYNEX | {label} — {sig.symbol} {sig.action}"
+    title = f"QIVYNEX | {label} — {sig.symbol} {sig.action} · {sig.timeframe}"
+    valid = None
+    try:
+        from . import market_data as _md
+        if sig.timeframe in _md.TF_SECONDS:
+            valid = sig.candle_time + 3 * _md.tf_delta(sig.timeframe)
+    except Exception:
+        valid = None
     eco = (assessment.economics if assessment else {}) or {}
     data = (assessment.data if assessment else {}) or {}
     lines = [
         f"Status: {sig.status.replace('_', ' ').title()}",
         f"Strategy: {sig.strategy} v{sig.strategy_version}",
+        f"Timeframe: {sig.timeframe} · signal candle {sig.candle_time:%d %b %H:%M} UTC" + (f" · valid until about {valid:%d %b %H:%M} UTC" if valid else ""),
         f"Score: {assessment.score}/100 (quality score, not win probability) · {assessment.verdict}" if assessment else "Score: unavailable",
         f"Data: {data.get('provider') or 'unavailable'}, quote age {data.get('quote_age_s', 'n/a')}s, spread {data.get('spread_pips') or data.get('spread_bps') or 'n/a'}{' pips' if data.get('spread_pips') else ' bps' if data.get('spread_bps') else ''}",
         f"Entry: {f(sig.entry_ref)} · Stop: {f(sig.stop_loss)} · Target: {f(sig.take_profit)}",
@@ -111,6 +120,13 @@ def signal_text(sig, assessment=None, risk: dict | None = None, label: str = "PA
 
 
 # ---------------------------------------------------------------- delivery
+def telegram_api(token: str, method: str, payload: dict | None = None) -> dict:
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=json.dumps(payload or {}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+
 def _telegram(db: Session, text: str) -> tuple[bool, str]:
     from ..secretbox import decrypt
     p = prefs(db).get("telegram", {})

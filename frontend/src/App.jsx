@@ -21,6 +21,7 @@ import Setups from "./pages/Setups.jsx";
 import Smc from "./pages/Smc.jsx";
 import Terminal from "./pages/Terminal.jsx";
 import Alerts from "./pages/Alerts.jsx";
+import StrategyLab from "./pages/StrategyLab.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -31,6 +32,7 @@ const ROUTES = [
   { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview },
   { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups },
+  { k: "lab", label: "Strategy lab & auto-trade", icon: "⚗", perm: "backtest.run", el: StrategyLab },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live },
   { k: "news", label: "News", icon: "◉", perm: "market.view", el: News },
   { k: "smc", label: "SMC scanner", icon: "⌖", perm: "market.view", el: Smc },

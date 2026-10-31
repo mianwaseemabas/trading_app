@@ -110,6 +110,42 @@ def put_prefs(body: PrefsIn, request: Request, user: User = Depends(require("sys
     return get_prefs(user, db)
 
 
+class FindChatIn(BaseModel):
+    telegram_token: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/alerts/telegram/find-chat")
+def find_chat(body: FindChatIn, user: User = Depends(require("system.settings")), db: Session = Depends(get_db)):
+    """Ask Telegram which chats have messaged the bot (getUpdates) so the owner doesn't have to find the chat id by hand."""
+    from ..secretbox import decrypt
+    token = (body.telegram_token or "").strip()
+    if not token:
+        enc = al.prefs(db).get("telegram", {}).get("bot_token_enc")
+        token = decrypt(enc) if enc else ""
+    if not token:
+        raise HTTPException(400, "Paste the bot token from @BotFather first.")
+    if ":" not in token:
+        raise HTTPException(400, "That doesn't look like a bot token (format 123456789:ABC...).")
+    try:
+        data = al.telegram_api(token, "getUpdates")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Telegram did not answer: {str(e)[:200]}. Check the token.")
+    chats = {}
+    for u in data.get("result", []):
+        m = u.get("message") or u.get("channel_post") or u.get("my_chat_member") or {}
+        c = m.get("chat") or {}
+        if c.get("id") is not None:
+            chats[str(c["id"])] = {"chat_id": str(c["id"]), "type": c.get("type", ""),
+                                   "name": c.get("title") or " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x) or c.get("username", "")}
+    bot = {}
+    try:
+        bot = al.telegram_api(token, "getMe").get("result", {})
+    except Exception:  # noqa: BLE001
+        pass
+    return {"bot": bot.get("username", ""), "chats": list(chats.values()),
+            "hint": "" if chats else "No messages found. Open your bot in Telegram, press Start or send 'hi', then try again."}
+
+
 class TestIn(BaseModel):
     channel: str
 
@@ -271,3 +307,64 @@ def performance_insights(mode: str = "PAPER", days: int = Query(90, ge=7, le=365
     ]
     return {"mode": mode, "monthly": list(monthly.values()), "max_drawdown": round(dd, 2), "funnel": funnel, "signal_status": st,
             "shadow_outcomes": outcomes, "note": "Paper, broker demo and live are always reported separately."}
+
+
+# ------------------------------------------------------------- automation
+@router.get("/automation")
+def get_automation(user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
+    from ..services import automation
+    from ..services.livegate import is_approved
+    c = state.get(db, "controls")
+    flags = automation.flags_of(c)
+    return {"modes": [{"mode": m, "enabled": bool(flags.get(m)), "live": m in automation.LIVE,
+                       "effective": automation.auto_ok(db, m)} for m in automation.MODES],
+            "min_score": c.get("auto_min_score", 70), "min_verdict": c.get("auto_min_verdict", "PAPER_TEST"),
+            "live_gate_approved": is_approved(db),
+            "note": "Auto-trade places qualified setups without asking. Every order still passes the risk engine. "
+                    "Real-money modes also need an approved, unexpired live gate."}
+
+
+class AutoIn(BaseModel):
+    mode: str | None = None
+    enabled: bool | None = None
+    min_score: int | None = Field(default=None, ge=50, le=100)
+    min_verdict: str | None = None
+    password: str | None = None
+
+
+@router.put("/automation")
+def put_automation(body: AutoIn, request: Request, user: User = Depends(require("trading.control")), db: Session = Depends(get_db)):
+    from ..services import automation
+    from ..services.livegate import is_approved
+    from .system import _confirm_password
+    c = state.get_locked(db, "controls")
+    flags = automation.flags_of(c)
+    if body.mode is not None:
+        if body.mode not in automation.MODES:
+            raise HTTPException(400, "Unknown mode")
+        if body.enabled and body.mode in automation.LIVE:
+            if not is_approved(db):
+                raise HTTPException(400, "Real-money auto-trading needs an approved, unexpired live gate (Risk & Strategy) first")
+            _confirm_password(user, body.password)
+        flags[body.mode] = bool(body.enabled)
+        if body.enabled:  # make sure the owner hears about automatic trades
+            p = state.get_locked(db, "alert_prefs")
+            for ch in ("telegram", "email"):
+                cur = p.setdefault("channels", {}).setdefault(ch, [])
+                for t in ("AUTO_TRADE", "ORDER_FILLED", "STOP_HIT", "TARGET_1_HIT", "PROTECTION_FAILURE"):
+                    if t not in cur:
+                        cur.append(t)
+            state.put(db, "alert_prefs", p, by=user.username)
+    if body.min_score is not None:
+        c["auto_min_score"] = body.min_score
+    if body.min_verdict is not None:
+        if body.min_verdict not in ("PAPER_TEST", "RESEARCH_SUPPORTED"):
+            raise HTTPException(400, "min_verdict must be PAPER_TEST or RESEARCH_SUPPORTED")
+        c["auto_min_verdict"] = body.min_verdict
+    c["auto_execute"] = flags
+    c["require_approval"] = not any(flags.values())  # keep the old switch consistent
+    state.put(db, "controls", c, by=user.username)
+    audit(db, "automation.updated", user=user, ip=client_ip(request),
+          details={"mode": body.mode, "enabled": body.enabled, "min_score": c.get("auto_min_score"), "min_verdict": c.get("auto_min_verdict")})
+    db.commit()
+    return get_automation(user, db)

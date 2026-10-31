@@ -13,6 +13,7 @@ function Preferences() {
   const [tg, setTg] = useState({ token: "", chat: "" });
   const [em, setEm] = useState(null);
   const [test, setTest] = useState(null);
+  const [found, setFound] = useState(null);
   useEffect(() => {
     if (data) {
       setCh(data.channels);
@@ -27,7 +28,7 @@ function Preferences() {
     email: { ...em, port: Number(em.port) || 587 } }), "Alert preferences saved").then(reload).catch(() => {});
   return (
     <Card title="Where alerts are sent" actions={editable && <button className="btn primary sm" disabled={busy} onClick={save}>Save</button>}>
-      <p className="small muted">Every alert always appears here in the app. Choose which ones are also sent to Telegram or email. Alerts are information only — they never place orders.</p>
+      <p className="small muted">Every alert always appears here in the app. Choose which ones are also sent to Telegram or email. Alerts never place orders themselves; orders come only from your auto-trade switches (Strategy lab page).</p>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead><tr><th>Alert</th><th>Telegram</th><th>Email</th></tr></thead>
@@ -40,8 +41,27 @@ function Preferences() {
       <div className="grid two" style={{ marginTop: 12 }}>
         <div>
           <h4>Telegram</h4>
-          <p className="tiny muted">Create a bot with @BotFather, send it a message, then get your chat id (e.g. from @userinfobot).</p>
-          <Field label={`Bot token ${data.telegram.has_token ? "(saved — leave empty to keep)" : ""}`}><input type="password" disabled={!editable} value={tg.token} onChange={(e) => setTg({ ...tg, token: e.target.value })} /></Field>
+          <ol className="tiny muted steps">
+            <li>In Telegram open <b>@BotFather</b>, send <code>/newbot</code>, pick a name and a username ending in “bot”. Copy the token it gives you.</li>
+            <li>Open your new bot (link from BotFather) and press <b>Start</b> or send “hi”. For a group: add the bot to the group and send a message there.</li>
+            <li>Paste the token below and press <b>Find my chat id</b>.</li>
+            <li>Press <b>Save</b> (top right), then <b>Send test</b>.</li>
+          </ol>
+          <Field label={`Bot token ${data.telegram.has_token ? "(saved — leave empty to keep)" : ""}`}><input type="password" disabled={!editable} value={tg.token} onChange={(e) => setTg({ ...tg, token: e.target.value })} placeholder="123456789:AA..." /></Field>
+          {editable && <button className="btn sm" disabled={busy} onClick={() => run(() => api.post("/alerts/telegram/find-chat", { telegram_token: tg.token || null })).then((r) => {
+            setFound(r);
+            if (r.chats.length === 1) setTg((x) => ({ ...x, chat: r.chats[0].chat_id }));
+          }).catch(() => {})}>Find my chat id</button>}
+          {found && <div className="small" style={{ margin: "6px 0" }}>
+            {found.bot && <div className="muted">Bot: @{found.bot}</div>}
+            {found.hint && <div className="warn">{found.hint}</div>}
+            {found.chats.map((c) => (
+              <div key={c.chat_id} className="row gap">
+                <button className="btn ghost sm" onClick={() => setTg({ ...tg, chat: c.chat_id })}>Use</button>
+                <span>{c.name || "(no name)"} · {c.type} · <code>{c.chat_id}</code></span>
+              </div>
+            ))}
+          </div>}
           <Field label="Chat id"><input disabled={!editable} value={tg.chat} onChange={(e) => setTg({ ...tg, chat: e.target.value })} /></Field>
           {editable && <button className="btn sm" onClick={() => run(() => api.post("/alerts/test", { channel: "telegram" })).then(setTest).catch(() => {})}>Send test</button>}
         </div>
