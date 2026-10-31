@@ -105,10 +105,11 @@ def refresh_market(db: Session, http=None) -> None:
         if time.time() - _mem["chg_at"] > 300:
             st["changes"] = {s: x.change_24h(s) for s in c["symbols"]}
             _mem["chg_at"] = time.time()
-        st.update(market_ok=True, market_error="", market_at=utcnow().isoformat())
+        st.update(market_ok=True, market_error="", market_at=utcnow().isoformat(), market_error_since="")
     except Exception as e:  # network / exchange errors must never stop the forex engine
         _mem["backoff_until"] = time.time() + 60
-        st.update(market_ok=False, market_error=str(e)[:300], market_at=utcnow().isoformat())
+        st.update(market_ok=False, market_error=str(e)[:300], market_at=utcnow().isoformat(),
+                  market_error_since=st.get("market_error_since") or utcnow().isoformat())
         log.warning("crypto market data: %s", e)
     state.put(db, "crypto_status", st)
 

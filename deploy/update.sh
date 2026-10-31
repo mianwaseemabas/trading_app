@@ -9,7 +9,7 @@ git pull --ff-only --quiet origin "$BRANCH"
 echo "Code at $(git rev-parse --short HEAD)"
 set -a; . ./.env; set +a
 export GIT_COMMIT="$(git rev-parse --short HEAD)"
-./deploy/backup.sh || echo "warning: pre-update backup failed"
+./deploy/backup.sh --no-offsite || echo "warning: pre-update backup failed"
 # Optional services (caddy, ctrader) come from COMPOSE_PROFILES in .env.
 docker compose up -d --build --remove-orphans
 # Make sure the web proxy talks to the (possibly recreated) backend.

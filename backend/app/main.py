@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 
 from .config import settings
 from .db import init_db, session_scope
-from .routers import academy, ai, push, auth, backtests, bridge, brokers, crypto, intel, lab, live, market, news, setups, system, trades, trust, users
+from .routers import academy, ai, assist, push, auth, backtests, bridge, brokers, crypto, intel, lab, live, market, news, setups, system, trades, trust, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -48,7 +48,7 @@ async def unhandled(request: Request, exc: Exception):
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 
-for r in (auth, users, system, trust, lab, academy, push, setups, crypto, intel, market, trades, backtests, bridge, brokers, live, ai, news):
+for r in (auth, users, system, trust, lab, academy, push, assist, setups, crypto, intel, market, trades, backtests, bridge, brokers, live, ai, news):
     app.include_router(r.router)
 app.include_router(live.pos_router)
 
@@ -58,11 +58,39 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/health/deep")
+def health_deep():
+    """For an external uptime check: worker alive, no long-running data/exchange/backup problems. No secrets."""
+    from .db import SessionLocal
+    from .services.health import deep
+    db = SessionLocal()
+    try:
+        return deep(db)
+    finally:
+        db.close()
+
+
 # Development convenience only: in production the bundled nginx serves the dashboard.
 if settings.is_dev and os.getenv("SERVE_STATIC_DIR"):
     from fastapi.staticfiles import StaticFiles
 
     app.mount("/", StaticFiles(directory=os.getenv("SERVE_STATIC_DIR"), html=True), name="static")
+
+
+def _migrate(db, state) -> None:
+    """One-time settings upgrades for installs created before a feature existed."""
+    done = state.get(db, "migrations") or []
+    if "alert_types_v2" not in done:
+        p = state.get(db, "alert_prefs")
+        ch = p.setdefault("channels", {})
+        for c in ("telegram", "push"):
+            cur = ch.setdefault(c, [])
+            for t in (["AI_BRIEF", "AI_COACH", "HEALTH", "PRICE_ALERT"] + (["SIGNAL_QUALIFIED", "AUTO_TRADE", "ORDER_FILLED", "STOP_HIT",
+                                                                              "TARGET_1_HIT", "KILL_SWITCH_ACTIVE"] if c == "push" else [])):
+                if t not in cur:
+                    cur.append(t)
+        state.put(db, "alert_prefs", p)
+        state.put(db, "migrations", done + ["alert_types_v2"])
 
 
 def bootstrap() -> None:
@@ -77,6 +105,8 @@ def bootstrap() -> None:
         # Serialise bootstrap across uvicorn workers and the engine worker.
         db.execute(text("SELECT pg_advisory_xact_lock(724003)"))
         state.ensure_defaults(db)
+        db.flush()
+        _migrate(db, state)
         if db.scalar(select(User.id).limit(1)) is None:
             u, p = settings.initial_admin_username.strip().lower(), settings.initial_admin_password
             if u and p:

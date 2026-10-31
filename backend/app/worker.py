@@ -30,6 +30,8 @@ def main() -> None:
         log.warning("Another worker holds the engine lock; waiting...")
         time.sleep(10)
     log.info("Trading engine started (interval %ss)", settings.worker_interval_s)
+    from .services.tgbot import start_thread
+    start_thread()
     last_housekeeping = 0.0
     while _running:
         started = time.time()

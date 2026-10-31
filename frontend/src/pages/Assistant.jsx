@@ -1,3 +1,4 @@
+import { AiHelpersCard } from "../components/Helpers.jsx";
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
@@ -84,6 +85,7 @@ export default function Assistant() {
   return (
     <div className="stack">
       {can("system.settings") && <Settings s={s} reload={reload} />}
+      <AiHelpersCard />
       <Card title="Trading coach" actions={msgs.length > 0 && <button className="btn sm ghost" onClick={() => setMsgs([])}>New chat</button>}>
         {!s.enabled ? (
           <p className="muted">The assistant is off. {can("system.settings") ? "Choose a provider, model and API key above and enable it." : "Ask an administrator to enable it."}</p>

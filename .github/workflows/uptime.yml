@@ -1,0 +1,27 @@
+# Optional outside check: if the app or its worker stops, you get a Telegram message even when the server is down.
+# Enable by adding repository secrets UPTIME_TELEGRAM_TOKEN and UPTIME_TELEGRAM_CHAT_ID (Settings → Secrets → Actions).
+name: Uptime
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check https://trade.qivynex.com
+        env:
+          TOKEN: ${{ secrets.UPTIME_TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.UPTIME_TELEGRAM_CHAT_ID }}
+        run: |
+          set +e
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then echo "Uptime alerts not configured (secrets missing) — skipping"; exit 0; fi
+          body=$(curl -fsS --max-time 20 https://trade.qivynex.com/api/health/deep)
+          rc=$?
+          ok=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('ok'))" 2>/dev/null)
+          if [ $rc -ne 0 ]; then msg="🚨 Qivynex is DOWN — https://trade.qivynex.com did not answer (curl exit $rc)."
+          elif [ "$ok" != "True" ]; then msg="⚠️ Qivynex health problem: $body"
+          else echo "healthy: $body"; exit 0; fi
+          curl -fsS --max-time 20 -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" -d chat_id="$CHAT" --data-urlencode text="$msg" >/dev/null
+          echo "$msg"

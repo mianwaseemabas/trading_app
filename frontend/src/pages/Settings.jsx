@@ -1,3 +1,4 @@
+import { BackupCard } from "../components/Helpers.jsx";
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
@@ -40,21 +41,10 @@ export default function Settings() {
           <div><span className="muted">Reconciliation</span><span>{status.reconciliation.ok ? "OK" : status.reconciliation.detail}</span></div>
         </div>
       </Card>
-      {n && (
-        <Card title="Notifications (Telegram)" actions={<Badge tone={n.telegram_configured ? "ok" : "muted"}>{n.telegram_configured ? "bot configured" : "not configured"}</Badge>}>
-          {!n.telegram_configured && <p className="muted small">Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the server .env file and restart to enable.</p>}
-          <div className="row gap wrap">
-            <label className="check"><input type="checkbox" checked={n.telegram_enabled} onChange={(e) => setN({ ...n, telegram_enabled: e.target.checked })} /> Enabled</label>
-            <label className="check"><input type="checkbox" checked={n.notify_orders} onChange={(e) => setN({ ...n, notify_orders: e.target.checked })} /> Orders & fills</label>
-            <label className="check"><input type="checkbox" checked={n.notify_signals} onChange={(e) => setN({ ...n, notify_signals: e.target.checked })} /> Untraded signals</label>
-          </div>
-          <p className="muted small">Kill switch, loss-limit locks and reconciliation problems are always sent when the bot is configured.</p>
-          <div className="row end gap">
-            <button className="btn ghost" disabled={!n.telegram_configured} onClick={() => run(() => api.post("/system/notifications/test"), "Test sent").catch(() => {})}>Send test</button>
-            <button className="btn primary" onClick={() => run(() => api.put("/system/notifications", { telegram_enabled: n.telegram_enabled, notify_orders: n.notify_orders, notify_signals: n.notify_signals }), "Saved").then(reloadN)}>Save</button>
-          </div>
-        </Card>
-      )}
+      <Card title="Notifications">
+        <p className="small">Telegram, email and phone notifications — and the Telegram bot — are set up on the <a href="#/alerts">Alerts</a> page.</p>
+      </Card>
+      <BackupCard />
       {can("trading.control") && (
         <Card title="Paper account">
           <p className="muted small">The paper account simulates execution at live bid/ask with commission. Reset requires no open paper positions.</p>

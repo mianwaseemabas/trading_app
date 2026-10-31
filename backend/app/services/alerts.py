@@ -35,6 +35,8 @@ TYPES = {
     "BROKER_DISCONNECTED": "Broker connection lost", "KILL_SWITCH_ACTIVE": "Kill switch engaged",
     "MODE_CHANGED": "Trading mode changed", "PROTECTION_FAILURE": "A stop-loss could not be placed / emergency",
     "RECONCILIATION": "Ledger or broker reconciliation mismatch", "DAILY_SUMMARY": "Daily summary", "WEEKLY_REVIEW": "Weekly review reminder",
+    "AI_BRIEF": "AI morning brief (news, markets, your trades)", "AI_COACH": "AI weekly coach: three lessons from your trades",
+    "HEALTH": "System health: prices/exchange/broker stopped for 5+ min, backups, recovery", "PRICE_ALERT": "Your price alert / chart line was touched",
 }
 DEFAULT_EXTERNAL = ["SIGNAL_QUALIFIED", "AUTO_TRADE", "MARKET_NEWS", "APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED", "BROKER_DISCONNECTED",
                     "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "RECONCILIATION", "DAILY_SUMMARY", "WEEKLY_REVIEW"]
@@ -120,10 +122,10 @@ def signal_text(sig, assessment=None, risk: dict | None = None, label: str = "PA
 
 
 # ---------------------------------------------------------------- delivery
-def telegram_api(token: str, method: str, payload: dict | None = None) -> dict:
+def telegram_api(token: str, method: str, payload: dict | None = None, timeout: int = 10) -> dict:
     req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=json.dumps(payload or {}).encode(),
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
 

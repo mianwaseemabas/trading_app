@@ -10,3 +10,8 @@ docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > "$
 chmod 600 "$f"
 find backups -name 'trading-*.sql.gz' -mtime +14 -delete
 echo "$(date -u) backup written: $f ($(du -h "$f" | cut -f1))"
+# Tell the app (health monitor) and, if switched on in System → Backups, send an encrypted copy to Telegram.
+docker compose exec -T worker python -m app.backup_tool record-local --name "$(basename "$f")" --bytes "$(stat -c%s "$f")" || true
+if [ "${1:-}" != "--no-offsite" ]; then
+  docker compose exec -T worker python -m app.backup_tool send --name "$(basename "$f")" < "$f" || true
+fi

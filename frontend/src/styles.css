@@ -70,7 +70,7 @@ code, .json { font-family: var(--mono); font-size: 12px; }
 .stat-s { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; border: 1px solid transparent; white-space: nowrap; }
-.badge.ok { background: rgba(47, 207, 143, 0.12); color: var(--ok); border-color: rgba(47, 207, 143, 0.3); }
+.badge.ok, .badge.good { background: rgba(47, 207, 143, 0.12); color: var(--ok); border-color: rgba(47, 207, 143, 0.3); }
 .badge.bad { background: rgba(255, 93, 108, 0.12); color: var(--bad); border-color: rgba(255, 93, 108, 0.35); }
 .badge.warn { background: rgba(242, 180, 67, 0.12); color: var(--warn); border-color: rgba(242, 180, 67, 0.3); }
 .badge.info { background: rgba(122, 167, 255, 0.12); color: var(--info); border-color: rgba(122, 167, 255, 0.3); }
@@ -510,3 +510,8 @@ ol.steps li { display: list-item; list-style: decimal; border: 0; padding: 0; }
   .modal-wrap, .modal-bg { align-items: flex-end; }
 }
 .phone-app { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 4px; }
+.helper-box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; align-content: start; }
+.helper-box .btn { justify-self: start; }
+.cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 14px; margin-top: 10px; }
+.cmd-grid > div { display: grid; }
+.brief { white-space: pre-wrap; line-height: 1.6; }

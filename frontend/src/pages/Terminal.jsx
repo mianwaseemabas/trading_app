@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
+import { ExplainChart } from "../components/Helpers.jsx";
 import ZoomChart from "../components/ZoomChart.jsx";
 import { Modal, fmt, pnlClass, useAction, useApi, useToast, useWidth } from "../components.jsx";
 
@@ -325,6 +326,7 @@ export default function Terminal() {
                     <div className="big-px mono">{w?.bid != null ? Number(w.bid).toFixed(digits) : last ? last.close.toFixed(digits) : "—"}</div>
                     {last && <div className="tiny muted mono">H {Math.max(...c.map((x) => x.high)).toFixed(digits)} | L {Math.min(...c.map((x) => x.low)).toFixed(digits)} | O {first.open.toFixed(digits)}</div>}
                   </div>
+                  <ExplainChart symbol={symbol} tf={tf} />
                   <div className="tf-row scroll-x">{TFS.map(([k, l]) => <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>)}</div>
                 </div>
                 <ZoomChart candles={cd?.candles || []} digits={digits} levels={levels} tfSec={TF_SEC[tf]} />

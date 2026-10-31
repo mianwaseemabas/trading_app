@@ -1,3 +1,4 @@
+import { TelegramBotCard } from "../components/Helpers.jsx";
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
@@ -151,6 +152,7 @@ export default function Alerts() {
         </div>
       </Card>
       <Preferences />
+      <TelegramBotCard />
     </div>
   );
 }
