@@ -30,6 +30,22 @@ function ImportCsv({ onClose, symbols }) {
   );
 }
 
+const STRAT_LABEL = { trend_pullback: "EMA trend pullback (baseline)", smc_sweep_bos: "SMC sweep → BOS → retest" };
+
+function SegmentsTable({ segs }) {
+  const rows = ["development", "validation", "final_test"].filter((k) => segs[k]).map((k) => ({ id: k, k, ...segs[k] }));
+  return (
+    <Table rows={rows} cols={[
+      { label: "Period", render: (x) => ({ development: "Development (60%)", validation: "Validation (20%)", final_test: "Final test (20%)" })[x.k] },
+      { label: "From", render: (x) => fmt.dt(x.start) }, { label: "To", render: (x) => fmt.dt(x.end) },
+      { label: "Trades", k: "trades", num: true }, { label: "Win %", num: true, render: (x) => fmt.pct(x.win_rate_pct, 1) },
+      { label: "PF", num: true, render: (x) => fmt.num(x.profit_factor, 2) }, { label: "Avg R", num: true, render: (x) => fmt.num(x.avg_r, 2) },
+      { label: "Expectancy", num: true, render: (x) => fmt.money(x.expectancy) },
+      { label: "Net", num: true, render: (x) => <span className={pnlClass(x.net_pnl)}>{fmt.money(x.net_pnl)}</span> },
+    ]} />
+  );
+}
+
 function RunDetail({ id }) {
   const { data: r, reload } = useApi(`/backtests/${id}`, { deps: [id] });
   useEffect(() => {
@@ -50,8 +66,34 @@ function RunDetail({ id }) {
       ) : (
         <div className="alert ok">No robustness warnings on this sample. Past results do not establish future profitability — continue to demo testing.</div>
       )}
-      <div className="row end"><a className="btn sm ghost" href={`#/assistant?q=${encodeURIComponent(`Explain my backtest #${id} (${r.params.symbol} ${r.params.timeframe}): all=${JSON.stringify(m.all)}, out_of_sample=${JSON.stringify(m.out_of_sample)}, warnings=${JSON.stringify(m.warnings)}, rejected=${JSON.stringify(m.risk_rejections)}. Is it good enough for demo trading and what should I try next?`)}`}>✦ Ask AI to explain</a></div>
+      <div className="row end"><a className="btn sm ghost" href={`#/assistant?q=${encodeURIComponent(`Explain my backtest #${id} (${r.params.symbol} ${r.params.timeframe}): all=${JSON.stringify(m.all)}, strategy=${m.strategy?.name}, segments(dev/val/final)=${JSON.stringify(m.segments)}, comparison=${JSON.stringify(m.comparison && { strategy: m.comparison.strategy, all: m.comparison.all })}, warnings=${JSON.stringify(m.warnings)}, rejected=${JSON.stringify(m.risk_rejections)}. Is it good enough for demo trading and what should I try next?`)}`}>✦ Ask AI to explain</a></div>
       <p className="muted small">{r.params.symbol} {r.params.timeframe} · {fmt.dt(m.period_start)} → {fmt.dt(m.period_end)} · {m.candles} candles · {m.signals} signals · strategy v{m.strategy?.version}</p>
+      <p className="small">Strategy: <b>{STRAT_LABEL[m.strategy?.name] || m.strategy?.name}</b></p>
+      {m.segments && Object.keys(m.segments).length > 0 && (
+        <>
+          <h4>Development / validation / final test (chronological)</h4>
+          <SegmentsTable segs={m.segments} />
+          <p className="muted small">Tune settings only by looking at <b>development</b>. Check <b>validation</b> occasionally. Look at the <b>final test</b> rarely — every time you change rules after seeing it, it stops being an honest test.</p>
+        </>
+      )}
+      {m.comparison && (
+        <>
+          <h4>Comparison on the same data</h4>
+          <Table rows={[{ id: 1, name: m.strategy?.name, all: m.all, ft: m.segments?.final_test, signals: m.signals },
+            { id: 2, name: m.comparison.strategy, all: m.comparison.all, ft: m.comparison.segments?.final_test, signals: m.comparison.signals }]} cols={[
+            { label: "Strategy", render: (x) => STRAT_LABEL[x.name] || x.name },
+            { label: "Signals", k: "signals", num: true },
+            { label: "Trades", num: true, render: (x) => x.all.trades },
+            { label: "Win %", num: true, render: (x) => fmt.pct(x.all.win_rate_pct, 1) },
+            { label: "PF", num: true, render: (x) => fmt.num(x.all.profit_factor, 2) },
+            { label: "Avg R", num: true, render: (x) => fmt.num(x.all.avg_r, 2) },
+            { label: "Max DD", num: true, render: (x) => fmt.money(x.all.max_drawdown) },
+            { label: "Net", num: true, render: (x) => <span className={pnlClass(x.all.net_pnl)}>{fmt.money(x.all.net_pnl)}</span> },
+            { label: "Final test net", num: true, render: (x) => <span className={pnlClass(x.ft?.net_pnl)}>{fmt.money(x.ft?.net_pnl)}</span> },
+          ]} />
+          <p className="muted small">Does the SMC logic add measurable value over the simple EMA baseline? Only trust a difference that holds in the final test and over 30+ trades.</p>
+        </>
+      )}
       <h4>All trades</h4>
       <MetricsGrid m={m.all} />
       <LineChart series={[{ points: (r.equity_curve || []).map((p) => ({ x: new Date(p.time).getTime() / 1000, y: p.equity })) }]} baseline={r.params.initial_balance} yFormat={(v) => fmt.money(v)} />
@@ -91,7 +133,7 @@ export default function Backtest() {
   const [run, busy] = useAction();
   const [showImport, setShowImport] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [f, setF] = useState({ symbol: "EURUSD", timeframe: "H1", start: "", end: "", initial_balance: 500, spread_points: 12, slippage_points: 3, commission_per_lot: 7, swap_per_lot_per_night: -1, oos_fraction: 0.3, folds: 4 });
+  const [f, setF] = useState({ symbol: "EURUSD", timeframe: "H1", start: "", end: "", initial_balance: 500, spread_points: 12, slippage_points: 3, commission_per_lot: 7, swap_per_lot_per_night: -1, oos_fraction: 0.3, folds: 4, strategy: "", compare_baseline: true });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const { data: riskCfg } = useApi("/system/risk");
   useEffect(() => {
@@ -99,7 +141,7 @@ export default function Backtest() {
     if (riskCfg?.risk) setF((x) => ({ ...x, commission_per_lot: riskCfg.risk.commission_per_lot }));
   }, [riskCfg]);
   const submit = () => {
-    const body = { ...f, start: f.start || null, end: f.end || null };
+    const body = { ...f, start: f.start || null, end: f.end || null, strategy: f.strategy || null };
     ["initial_balance", "spread_points", "slippage_points", "commission_per_lot", "swap_per_lot_per_night", "oos_fraction"].forEach((k) => (body[k] = Number(body[k])));
     body.folds = parseInt(body.folds, 10);
     run(() => api.post("/backtests", body), "Backtest started").then((r) => { setSelected(r.id); reload(); }).catch(() => {});
@@ -107,8 +149,13 @@ export default function Backtest() {
   return (
     <div className="stack">
       <Card title="New backtest" actions={<button className="btn sm" onClick={() => setShowImport(true)}>Import CSV history</button>}>
-        <p className="muted small">Uses the current strategy (v{strat?.version}) and risk settings, the same code as live trading. Entries at the next candle open, conservative same-bar stop assumption, costs included.</p>
+        <p className="muted small">Uses your strategy settings (v{strat?.version}) and risk settings, the same code as live trading. Entries at the next candle open, conservative same-bar stop assumption, costs included.</p>
         <div className="grid form">
+          <Field label="Strategy"><select value={f.strategy} onChange={set("strategy")}>
+            <option value="">Live strategy ({STRAT_LABEL[strat?.name] || strat?.name})</option>
+            {Object.entries(STRAT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select></Field>
+          <Field label="Compare"><label className="check"><input type="checkbox" checked={f.compare_baseline} onChange={(e) => setF({ ...f, compare_baseline: e.target.checked })} /> also run the other strategy on the same data</label></Field>
           <Field label="Symbol"><select value={f.symbol} onChange={set("symbol")}>{(strat?.symbols || ["EURUSD"]).map((s) => <option key={s}>{s}</option>)}</select></Field>
           <Field label="Timeframe"><select value={f.timeframe} onChange={set("timeframe")}>{["M15", "H1", "H4"].map((t) => <option key={t}>{t}</option>)}</select></Field>
           <Field label="From (optional)"><input type="date" value={f.start} onChange={set("start")} /></Field>

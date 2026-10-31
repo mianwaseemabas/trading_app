@@ -6,8 +6,8 @@ import csv
 import io
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -16,8 +16,8 @@ from .. import state
 from ..audit import audit
 from ..db import get_db
 from ..deps import client_ip, require
-from ..models import (AuditLog, EventLog, NewsEvent, Order, PendingOrder, Position, PositionMgmt, Signal, TradeNote,
-                      User, utcnow)
+from ..models import (AuditLog, EventLog, NewsEvent, Order, PendingOrder, Position, PositionMgmt, Signal, SignalApproval,
+                      TradeAttachment, TradeNote, User, utcnow)
 from ..services import market_data as md
 from ..services import trading
 from ..services.indicators import add_indicators
@@ -193,6 +193,8 @@ def suggest(symbol: str, side: str, entry: float | None = None, user: User = Dep
 
 # ---------------------------------------------------------------- controls
 class ControlsIn(BaseModel):
+    require_approval: bool | None = None
+    approval_minutes: int | None = Field(default=None, ge=5, le=24 * 60)
     auto_trading: bool | None = None
     manual_trading: bool | None = None
     disabled_symbols: list[str] | None = None
@@ -371,6 +373,10 @@ def detail(pid: int, user: User = Depends(require("trades.view")), db: Session =
         "management": {"initial_sl": m.initial_sl, "breakeven_r": m.breakeven_r, "trailing_atr": m.trailing_atr,
                        "breakeven_done": m.breakeven_done} if m else None,
         "note": {"note": n.note, "tags": n.tags, "rating": n.rating} if n else None,
+        "approval": ({"status": ap.status, "by": ap.decided_by, "at": ap.decided_at, "note": ap.note}
+                     if sig and (ap := db.get(SignalApproval, sig.id)) else None),
+        "attachments": [{"id": x.id, "filename": x.filename, "size": x.size, "created_at": x.created_at}
+                        for x in db.scalars(select(TradeAttachment).where(TradeAttachment.position_id == p.id).order_by(TradeAttachment.id)).all()],
         "candles": [{"time": int(t.timestamp()), "open": r.open, "high": r.high, "low": r.low, "close": r.close} for t, r in df.iterrows()],
     }
 
@@ -388,5 +394,54 @@ def put_note(pid: int, body: NoteIn, user: User = Depends(require("trades.view")
     n = db.get(TradeNote, pid) or TradeNote(position_id=pid)
     n.note, n.tags, n.rating, n.updated_by = body.note, [t.strip()[:30] for t in body.tags if t.strip()], body.rating, user.username
     db.add(n)
+    db.commit()
+    return {"status": "ok"}
+
+
+IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_ATTACHMENT = 3 * 1024 * 1024
+
+
+@pos_router.post("/{pid}/attachments")
+async def add_attachment(pid: int, request: Request, file: UploadFile = File(...), user: User = Depends(require("trades.view")),
+                         db: Session = Depends(get_db)):
+    if db.get(Position, pid) is None:
+        raise HTTPException(404, "Not found")
+    if file.content_type not in IMAGE_TYPES:
+        raise HTTPException(400, "Only PNG, JPEG, WEBP or GIF screenshots")
+    data = await file.read(MAX_ATTACHMENT + 1)
+    if len(data) > MAX_ATTACHMENT:
+        raise HTTPException(400, "Max 3 MB per screenshot")
+    sig = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif", b"RIFF": "image/webp"}
+    if not any(data.startswith(k) for k in sig):
+        raise HTTPException(400, "File content is not an image")
+    if db.scalar(select(TradeAttachment.id).where(TradeAttachment.position_id == pid).offset(9).limit(1)):
+        raise HTTPException(400, "Max 10 screenshots per trade")
+    a = TradeAttachment(position_id=pid, created_by=user.username, filename=(file.filename or "screenshot")[:200],
+                        content_type=file.content_type, size=len(data), data=data)
+    db.add(a)
+    audit(db, "journal.attachment_added", user=user, ip=client_ip(request), entity="position", entity_id=pid,
+          details={"filename": a.filename, "size": a.size})
+    db.commit()
+    return {"id": a.id}
+
+
+@pos_router.get("/attachments/{aid}")
+def get_attachment(aid: int, user: User = Depends(require("trades.view")), db: Session = Depends(get_db)):
+    a = db.get(TradeAttachment, aid)
+    if a is None or a.content_type not in IMAGE_TYPES:
+        raise HTTPException(404, "Not found")
+    return Response(a.data, media_type=a.content_type, headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600",
+                                                                "Content-Disposition": "inline", "Content-Security-Policy": "default-src 'none'"})
+
+
+@pos_router.delete("/attachments/{aid}")
+def del_attachment(aid: int, request: Request, user: User = Depends(require("trades.view")), db: Session = Depends(get_db)):
+    a = db.get(TradeAttachment, aid)
+    if a is None:
+        raise HTTPException(404, "Not found")
+    audit(db, "journal.attachment_deleted", user=user, ip=client_ip(request), entity="position", entity_id=a.position_id,
+          details={"filename": a.filename})
+    db.delete(a)
     db.commit()
     return {"status": "ok"}

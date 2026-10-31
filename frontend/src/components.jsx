@@ -230,7 +230,7 @@ export const Tabs = ({ tabs, value, onChange }) => (
 export const JsonView = ({ data }) => <pre className="json">{JSON.stringify(data, null, 2)}</pre>;
 
 // ------------------------------------------------------------------ charts
-function useWidth() {
+export function useWidth() {
   const ref = useRef(null);
   const [w, setW] = useState(800);
   useEffect(() => {

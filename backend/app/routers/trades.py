@@ -113,16 +113,18 @@ def performance(mode: str = "PAPER", days: int = Query(30, ge=1, le=3650),
     for p in rows:
         equity += p.realized_pnl
         curve.append({"time": p.closed_at.isoformat(), "equity": round(equity, 2)})
-    groups: dict = {"symbol": {}, "side": {}, "weekday": {}, "hour": {}, "source": {}}
+    groups: dict = {"symbol": {}, "side": {}, "session": {}, "strategy": {}, "weekday": {}, "hour": {}, "source": {}}
     days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     orders = {o.id: o for o in db.scalars(select(Order).where(Order.id.in_([p.order_id for p in rows if p.order_id] or [0]))).all()}
     sigs = {s.id: s for s in db.scalars(select(Signal).where(Signal.id.in_([o.signal_id for o in orders.values() if o.signal_id] or [0]))).all()}
     for p in rows:
         t = {"net_pnl": p.realized_pnl, "side": p.side, "commission": 0, "swap": 0, "spread_cost": 0, "r_multiple": None}
         o = orders.get(p.order_id)
-        src = sigs[o.signal_id].strategy if o and o.signal_id in sigs else "broker"
-        src = {"manual": "manual", "pending": "manual (limit/stop)"}.get(src, "strategy" if src not in ("broker",) else "broker")
-        for g, k in (("symbol", p.symbol), ("side", p.side), ("weekday", days[p.opened_at.weekday()]),
+        strat = sigs[o.signal_id].strategy if o and o.signal_id in sigs else "broker"
+        src = {"manual": "manual", "pending": "manual (limit/stop)"}.get(strat, "strategy" if strat != "broker" else "broker")
+        from ..services.report import session_of
+        for g, k in (("symbol", p.symbol), ("side", p.side), ("session", session_of(p.opened_at)), ("strategy", strat),
+                     ("weekday", days[p.opened_at.weekday()]),
                      ("hour", f"{p.opened_at.hour:02d}:00 UTC"), ("source", src)):
             groups[g].setdefault(k, []).append(t)
     return {"mode": mode, "metrics": metrics(trades, start_equity), "equity_curve": curve,

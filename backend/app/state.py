@@ -67,6 +67,15 @@ DEFAULTS: dict[str, Any] = {
         "reward_risk": 2.0,
         "max_atr_pct": 1.0,  # skip if ATR > this % of price (abnormal volatility)
         "trade_timeframes": ["H1"],  # timeframes allowed to place orders; others only log signals
+        # --- SMC research definitions (used by the smc_sweep_bos strategy, the SMC scanner and reports)
+        "smc_swing_n": 3,             # candles each side that confirm a swing high/low
+        "smc_displacement_atr": 1.2,  # displacement candle body >= this x ATR
+        "smc_fvg_min_atr": 0.1,       # minimum fair-value-gap size in ATR
+        "smc_bos_window": 20,         # candles allowed between sweep and structure break
+        "smc_retest_window": 15,      # candles allowed between break and retest
+        "smc_max_stop_atr": 3.0,      # reject setups whose stop is wider than this x ATR
+        "smc_reward_risk": 2.0,
+        "smc_trend_filter": True,     # trade only on the side of EMA(slow)
     },
     "live_gate": {
         "broker_legal_checked": False,
@@ -94,7 +103,7 @@ DEFAULTS: dict[str, Any] = {
         "ctrader": {"client_id": "", "client_secret_enc": "", "access_token_enc": "", "refresh_token_enc": "", "account_login": ""},
     },
     # Trading on/off switches and filters (Live trading page control bar).
-    "controls": {
+    "controls": {"require_approval": True, "approval_minutes": 60,
         "auto_trading": True,  # strategy may place orders (when the mode allows orders)
         "manual_trading": True,  # manual order ticket allowed
         "disabled_symbols": [],  # symbols where no new orders are opened

@@ -23,6 +23,14 @@ const GLOSSARY = [
   ["R / R-multiple", "1R = the amount you risked. Closing at +2R means you won twice what you risked."],
   ["Break-even / trailing stop", "Auto-protect: move the stop to your entry once the trade is +1R in profit, or let it follow the price at a distance of N × ATR."],
   ["High-impact news", "Scheduled economic releases (rates, jobs, inflation) that can move prices sharply. The news filter blocks new trades around them."],
+  ["Swing high / low", "A candle whose high (low) is beyond the 3 candles on each side. Only confirmed 3 candles later, so the app never uses future data."],
+  ["BSL / SSL", "Buy-side liquidity above swing highs and sell-side liquidity below swing lows — places where stop orders may cluster."],
+  ["Liquidity sweep", "Price wicks beyond a swing level and closes back inside. A chart cannot prove it was a deliberate 'stop hunt'."],
+  ["BOS / CHoCH (MSS)", "A candle closes beyond the latest swing level. BOS = in the direction of the current structure; CHoCH = it flips the structure."],
+  ["Displacement", "A strong candle: body ≥ 1.2 × ATR and at least half of its range."],
+  ["Fair value gap (FVG)", "A three-candle gap: candle 3's low above candle 1's high (bullish) or the mirror. A revisit is possible, not guaranteed."],
+  ["Order block (OB)", "The last opposite-colour candle before a structure break. A zone by definition — not proof of bank orders."],
+  ["Expectancy", "Average profit per trade after costs. Must be positive over many trades; a high win rate alone means nothing."],
   ["Kill switch", "Emergency stop: blocks all new orders immediately (optionally closes open positions)."],
 ];
 
@@ -74,6 +82,17 @@ export default function Guide() {
         <ul className="steps">{steps.map((s) => <Step key={s.title} {...s} />)}</ul>
       </Card>
       <div className="grid two">
+        <Card title="Your research → approval workflow">
+          <ol className="small">
+            <li><b>Market overview</b>: sessions, H4 → H1 → M15 trend, volatility, key liquidity and upcoming news.</li>
+            <li><b>SMC scanner</b>: swings, BSL/SSL, sweeps, BOS/CHoCH and FVGs drawn from the app's written rules.</li>
+            <li><b>Setups to approve</b>: when the strategy finds a setup it waits for you, with a report: hypothesis, invalidation, targets, reasons for and against, risk in $. Approve or decline with a reason.</li>
+            <li><b>Live trading</b>: watch the trade, move the stop, add a screenshot and a journal note.</li>
+            <li><b>Trades → Performance</b>: expectancy, profit factor, drawdown, average R — by market, session and strategy.</li>
+            <li><b>Backtest</b>: compare SMC vs the EMA baseline on 60% development / 20% validation / 20% final-test data.</li>
+          </ol>
+          <p className="small muted">Success at first = a repeatable process, not money. Stay on demo until 50+ trades and the final-test results are positive after costs. With a ~$100 account, minimum lot sizes may make your risk limit impossible — the app will refuse those trades rather than over-risk.</p>
+        </Card>
         <Card title="How the app decides a trade">
           <ol className="small">
             <li>Every 15 minutes / hour a candle closes. The strategy checks trend (EMA), momentum (MACD, RSI) and volatility (ATR).</li>

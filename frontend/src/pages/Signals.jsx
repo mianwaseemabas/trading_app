@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Badge, Card, Modal, Table, digitsFor, fmt, statusTone, useApi } from "../components.jsx";
+import { SetupReport } from "./Setups.jsx";
 
 function CheckList({ items }) {
   if (!items || !items.length) return <p className="muted">None</p>;
@@ -65,13 +66,14 @@ export default function Signals() {
   const [status, setStatus] = useState("");
   const { data } = useApi(`/signals?limit=300${actionable ? "&actionable=true" : ""}${status ? `&status=${status}` : ""}`, { interval: 30000, deps: [actionable, status] });
   const [open, setOpen] = useState(null);
+  const [review, setReview] = useState(null);
   return (
     <Card title="Signal log" actions={
       <>
         <label className="check"><input type="checkbox" checked={actionable} onChange={(e) => setActionable(e.target.checked)} /> BUY/SELL only</label>
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Any status</option>
-          {["ORDERED", "REJECTED", "SIGNAL_ONLY", "NO_TRADE"].map((s) => <option key={s}>{s}</option>)}
+          {["AWAITING", "ORDERED", "DECLINED", "EXPIRED", "REJECTED", "SIGNAL_ONLY", "NO_TRADE"].map((s) => <option key={s}>{s}</option>)}
         </select>
       </>
     }>
@@ -88,7 +90,9 @@ export default function Signals() {
         { label: "Status", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
         { label: "Mode", k: "trading_mode" },
         { label: "Version", k: "strategy_version" },
+        { label: "", render: (r) => r.action !== "NONE" && r.timeframe !== "MAN" && <button className="btn sm ghost" onClick={(e) => { e.stopPropagation(); setReview(r.id); }}>Setup report</button> },
       ]} />
+      {review && <SetupReport id={review} onClose={() => setReview(null)} />}
       {open && <SignalDetail id={open} onClose={() => setOpen(null)} />}
     </Card>
   );

@@ -16,14 +16,20 @@ import Brokers from "./pages/Brokers.jsx";
 import Assistant from "./pages/Assistant.jsx";
 import Guide from "./pages/Guide.jsx";
 import News from "./pages/News.jsx";
+import Overview from "./pages/Overview.jsx";
+import Setups from "./pages/Setups.jsx";
+import Smc from "./pages/Smc.jsx";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
 const ROUTES = [
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard },
+  { k: "overview", label: "Market overview", icon: "◎", perm: "market.view", el: Overview },
+  { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live },
   { k: "news", label: "News", icon: "◉", perm: "market.view", el: News },
+  { k: "smc", label: "SMC scanner", icon: "⌖", perm: "market.view", el: Smc },
   { k: "market", label: "Market", icon: "◫", perm: "market.view", el: Market },
   { k: "signals", label: "Signals", icon: "◇", perm: "signals.view", el: Signals },
   { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades },

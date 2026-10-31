@@ -25,6 +25,11 @@ import pandas as pd
 
 NAME = "trend_pullback"
 
+STRATEGIES = {
+    "trend_pullback": "EMA trend + MACD momentum pullback (baseline)",
+    "smc_sweep_bos": "SMC: liquidity sweep → BOS/CHoCH with displacement → FVG/order-block retest",
+}
+
 
 @dataclass
 class StrategyResult:
@@ -44,8 +49,45 @@ def _f(x) -> float | None:
         return None
 
 
+def prepare(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Add everything the configured strategy needs (indicators, SMC columns)."""
+    from .indicators import add_indicators
+    ind = add_indicators(df, cfg)
+    if cfg.get("name") == "smc_sweep_bos":
+        from .smc import signals
+        ind = signals(ind, cfg)
+    return ind
+
+
 def evaluate(df: pd.DataFrame, i: int, cfg: dict) -> StrategyResult:
-    """Evaluate the strategy on row position i of an indicator DataFrame."""
+    """Evaluate the configured strategy on row i of a DataFrame returned by prepare()."""
+    if cfg.get("name") == "smc_sweep_bos":
+        return _smc_evaluate(df, i, cfg)
+    return _trend_evaluate(df, i, cfg)
+
+
+def _smc_evaluate(df: pd.DataFrame, i: int, cfg: dict) -> StrategyResult:
+    if "smc_signal" not in df:
+        from .smc import signals
+        df = signals(df, cfg)
+    row = df.iloc[i]
+    close, atr_v, ema_s = _f(row["close"]), _f(row.get("atr")), _f(row.get("ema_slow"))
+    features = {"close": close, "atr": atr_v, "ema_slow": ema_s, "rsi": _f(row.get("rsi"))}
+    info = row.get("smc_info")
+    if not isinstance(info, dict):
+        return StrategyResult("NONE", features=features,
+                              reasons=[{"check": "SMC sequence (sweep → break → retest) completed on this candle", "passed": False}])
+    features["smc"] = {"zone": info["zone"], "sweep_time": info["sweep_time"], "break_time": info["break_time"]}
+    side = "BUY" if info["dir"] == "bull" else "SELL"
+    reasons = [{"side": side, **c} for c in info["checks"]]
+    sigv = int(row["smc_signal"])
+    if sigv == 0:
+        return StrategyResult("NONE", features=features, reasons=reasons)
+    return StrategyResult(side, close, _f(row["smc_sl"]), _f(row["smc_tp"]), features, reasons)
+
+
+def _trend_evaluate(df: pd.DataFrame, i: int, cfg: dict) -> StrategyResult:
+    """trend_pullback v1 on row position i of an indicator DataFrame."""
     if i < 1 or i >= len(df):
         return StrategyResult("NONE", reasons=[{"check": "history", "passed": False, "value": "insufficient"}])
     row, prev = df.iloc[i], df.iloc[i - 1]

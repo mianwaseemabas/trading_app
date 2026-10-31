@@ -18,10 +18,11 @@ from collections import Counter
 
 import pandas as pd
 
-from .indicators import add_indicators, required_history
+from .indicators import required_history
 from .risk_engine import AccountState, InstrumentSpec, OpenPos, RiskContext
 from .risk_engine import evaluate as risk_evaluate
 from .strategy import evaluate as strat_evaluate
+from .strategy import prepare as strat_prepare
 
 
 def _vpu(spec: InstrumentSpec, account_ccy: str, price: float, fallback_rate: float) -> float:
@@ -84,7 +85,7 @@ def run_backtest(df: pd.DataFrame, strategy_cfg: dict, risk_cfg: dict, spec: Ins
     oos_fraction = float(params.get("oos_fraction", 0.3))
     n_folds = int(params.get("folds", 4))
 
-    ind = add_indicators(df, strategy_cfg)
+    ind = strat_prepare(df, strategy_cfg)
     warmup = required_history(strategy_cfg) // 2
     rows = ind.rename_axis("time").reset_index()
     times = rows["time"]
@@ -204,6 +205,16 @@ def run_backtest(df: pd.DataFrame, strategy_cfg: dict, risk_cfg: dict, spec: Ins
     else:
         ins, oos, split_t = trades, [], None
 
+    # Chronological development / validation / final-test split (default 60 / 20 / 20).
+    segments = {}
+    if len(rows) > warmup + 10:
+        dev_f, val_f = float(params.get("dev_fraction", 0.6)), float(params.get("val_fraction", 0.2))
+        s0, s1 = times.iloc[warmup], times.iloc[-1]
+        cut1, cut2 = s0 + (s1 - s0) * dev_f, s0 + (s1 - s0) * (dev_f + val_f)
+        for name, a_, b_ in (("development", s0, cut1), ("validation", cut1, cut2), ("final_test", cut2, s1 + pd.Timedelta(seconds=1))):
+            seg_t = [t for t in trades if a_ <= pd.Timestamp(t["entry_time"]) < b_]
+            segments[name] = {"start": a_.isoformat(), "end": min(b_, s1).isoformat(), **metrics(seg_t, initial)}
+
     m_all = metrics(trades, initial)
     m_in, m_oos = metrics(ins, initial), metrics(oos, initial)
     warnings = []
@@ -213,6 +224,9 @@ def run_backtest(df: pd.DataFrame, strategy_cfg: dict, risk_cfg: dict, spec: Ins
         warnings.append("No trades were taken on this sample.")
     elif (m_all.get("profit_factor") or 0) < 1.1:
         warnings.append("Profit factor after costs is below 1.1.")
+    ft = segments.get("final_test", {})
+    if ft.get("trades") and (ft.get("profit_factor") or 0) < 1.0:
+        warnings.append("Final test period (last 20%) lost money.")
     if m_oos["trades"] and (m_oos.get("profit_factor") or 0) < 1.0:
         warnings.append("Out-of-sample segment lost money.")
     neg_folds = sum(1 for f in folds if f["trades"] and f["net_pnl"] < 0)
@@ -223,6 +237,7 @@ def run_backtest(df: pd.DataFrame, strategy_cfg: dict, risk_cfg: dict, spec: Ins
             "all": m_all,
             "in_sample": m_in,
             "out_of_sample": m_oos,
+            "segments": segments,
             "split_time": split_t.isoformat() if split_t is not None else None,
             "signals": signals,
             "risk_rejections": dict(rejections),

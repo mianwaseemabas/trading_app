@@ -34,6 +34,10 @@ class BacktestIn(BaseModel):
     leverage: int = Field(100, ge=1, le=1000)
     oos_fraction: float = Field(0.3, ge=0.1, le=0.6)
     folds: int = Field(4, ge=2, le=12)
+    strategy: str | None = None          # None = the live strategy
+    compare_baseline: bool = True        # also run the other strategy on the same data for comparison
+    dev_fraction: float = Field(0.6, ge=0.3, le=0.8)
+    val_fraction: float = Field(0.2, ge=0.0, le=0.4)
     strategy_overrides: dict = {}
 
 
@@ -57,9 +61,19 @@ def _execute(run_id: int) -> None:
             # Historical simulation: the market's *current* open/closed status is irrelevant.
             spec.trade_allowed = True
             cfg = {**state.get(db, "strategy"), **p.get("strategy_overrides", {})}
+            if p.get("strategy"):
+                cfg["name"] = p["strategy"]
             risk = state.get(db, "risk")
             res = run_backtest(df, cfg, risk, spec, p)
-            run.metrics = {**res["metrics"], "strategy": {k: cfg[k] for k in cfg if k not in ("symbols", "timeframes")}}
+            comparison = None
+            if p.get("compare_baseline", True):
+                from ..services.strategy import STRATEGIES
+                other = next(k for k in STRATEGIES if k != cfg["name"])
+                o = run_backtest(df, {**cfg, "name": other}, risk, spec, p)["metrics"]
+                comparison = {"strategy": other, "all": o["all"], "segments": o["segments"], "signals": o["signals"],
+                              "warnings": o["warnings"]}
+            run.metrics = {**res["metrics"], "comparison": comparison,
+                           "strategy": {k: cfg[k] for k in cfg if k not in ("symbols", "timeframes")}}
             run.trades = res["trades"]
             run.equity_curve = res["equity_curve"]
             run.folds = res["folds"]
@@ -75,6 +89,9 @@ def create_backtest(body: BacktestIn, request: Request, tasks: BackgroundTasks,
                     user: User = Depends(require("backtest.run")), db: Session = Depends(get_db)):
     if body.timeframe not in md.TF_SECONDS:
         raise HTTPException(400, "Unknown timeframe")
+    from ..services.strategy import STRATEGIES
+    if body.strategy and body.strategy not in STRATEGIES:
+        raise HTTPException(400, f"Unknown strategy; choose one of {list(STRATEGIES)}")
     running = db.scalar(select(BacktestRun).where(BacktestRun.status == "RUNNING", BacktestRun.created_by == user.username))
     if running:
         raise HTTPException(409, "You already have a backtest running")

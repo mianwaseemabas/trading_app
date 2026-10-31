@@ -108,6 +108,7 @@ export default function Dashboard() {
   const { data: positions, reload: reloadPos } = useApi(can("trades.view") ? "/positions?status=OPEN" : null, { interval: 5000 });
   const { data: signals } = useApi(can("signals.view") ? "/signals?actionable=true&limit=8" : null, { interval: 15000 });
   const { data: quotes } = useApi(can("market.view") ? "/market/quotes" : null, { interval: 5000 });
+  const { data: waiting } = useApi(can("signals.view") ? "/setups?status=WAITING" : null, { interval: 15000 });
   const { data: news } = useApi(can("market.view") ? "/news?days_back=0&days_ahead=3&impact=High" : null, { interval: 60000 });
   const [run] = useAction();
   if (error) return <div className="alert bad">{error}</div>;
@@ -119,6 +120,7 @@ export default function Dashboard() {
     <div className="stack">
       {s.data.source === "simulator" && <div className="alert warn">Data source is the <b>simulator</b> (synthetic prices for testing the system). Switch to broker data in System settings once cTrader or MT5 is connected.</div>}
       <Unlock status={s} reload={reload} />
+      {waiting?.setups?.length > 0 && <div className="alert warn"><b>{waiting.setups.length} trade setup(s) waiting for your approval.</b> <a href="#/setups">Review →</a></div>}
       {s.trading.kill_switch && <div className="alert bad"><strong>Kill switch engaged.</strong> {s.trading.kill_switch_reason}</div>}
 
       <div className="grid stats">

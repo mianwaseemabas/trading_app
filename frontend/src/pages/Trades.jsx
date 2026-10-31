@@ -46,7 +46,7 @@ const CLOSED_COLS = [
   { label: "Net P&L", num: true, render: (p) => <span className={pnlClass(p.realized_pnl)}>{fmt.money(p.realized_pnl)}</span> },
 ];
 
-const GROUP_LABEL = { symbol: "By market", side: "Buy vs sell", source: "Automatic vs manual", weekday: "By weekday", hour: "By hour (UTC)" };
+const GROUP_LABEL = { symbol: "By market", side: "Buy vs sell", session: "By session (when opened)", strategy: "By strategy", source: "Automatic vs manual", weekday: "By weekday", hour: "By hour (UTC)" };
 
 function Breakdown({ data }) {
   if (!data) return null;

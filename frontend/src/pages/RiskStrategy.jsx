@@ -59,6 +59,15 @@ const STRAT_FIELDS = [
   ["macd_fast", "MACD fast"], ["macd_slow", "MACD slow"], ["macd_signal", "MACD signal"],
   ["atr_period", "ATR period"], ["atr_stop_mult", "Stop = ATR ×"], ["reward_risk", "Take-profit = stop ×"], ["max_atr_pct", "Skip if ATR > % of price"],
 ];
+const SMC_FIELDS = [
+  ["smc_swing_n", "Swing = candles each side"], ["smc_displacement_atr", "Displacement body ≥ ATR ×"], ["smc_fvg_min_atr", "Min FVG size (ATR ×)"],
+  ["smc_bos_window", "Max candles sweep → break"], ["smc_retest_window", "Max candles break → retest"], ["smc_max_stop_atr", "Max stop (ATR ×)"],
+  ["smc_reward_risk", "SMC target = stop ×"],
+];
+const STRATS = [
+  { k: "trend_pullback", label: "EMA trend pullback (baseline)", d: "LONG when EMA fast > EMA slow, close > EMA slow, MACD histogram crosses above zero, RSI within the long band and volatility is normal. SHORT is the mirror image." },
+  { k: "smc_sweep_bos", label: "SMC: sweep → BOS/CHoCH → retest", d: "Waits for a liquidity sweep (wick beyond a swing level, close back inside), then a structure break with a displacement candle, then a retest of the fair value gap or order block. Stop beyond the sweep extreme; target = stop × reward." },
+];
 const TFS = ["M15", "M30", "H1", "H4"];
 
 function StrategyForm() {
@@ -72,12 +81,15 @@ function StrategyForm() {
   const toggle = (k, tf) => setVals({ ...vals, [k]: vals[k].includes(tf) ? vals[k].filter((x) => x !== tf) : [...vals[k], tf] });
   const save = () => {
     const values = { ...vals, symbols: vals.symbols.split(",").map((s) => s.trim()).filter(Boolean) };
-    delete values.name; delete values.version;
+    delete values.version;
     run(() => api.put("/system/strategy", { values }), "Strategy saved").then(reload).catch(() => {});
   };
   return (
-    <Card title={`Strategy: ${data.name} v${data.version}`} actions={editable && <button className="btn primary sm" disabled={busy} onClick={save}>Save</button>}>
-      <p className="muted small">LONG when EMA fast &gt; EMA slow, close &gt; EMA slow, MACD histogram crosses above zero, RSI within the long band and volatility is normal. SHORT is the mirror image. Evaluated on closed candles only. Changing rule parameters bumps the version so every signal stays traceable. This is a hypothesis to test, not a proven edge.</p>
+    <Card title={`Strategy: ${(STRATS.find((x) => x.k === data.name) || {}).label || data.name} · v${data.version}`} actions={editable && <button className="btn primary sm" disabled={busy} onClick={save}>Save</button>}>
+      <Field label="Live strategy (what the engine trades)">
+        <div className="seg">{STRATS.map((x) => <button key={x.k} type="button" disabled={!editable} className={vals.name === x.k ? "active" : ""} onClick={() => setVals({ ...vals, name: x.k })}>{x.label}</button>)}</div>
+      </Field>
+      <p className="muted small">{(STRATS.find((x) => x.k === vals.name) || STRATS[0]).d} Evaluated on closed candles only. Changing rule parameters bumps the version so every signal stays traceable. This is a hypothesis to test, not a proven edge.</p>
       <Field label="Symbols (comma separated, broker names)"><input disabled={!editable} value={vals.symbols} onChange={(e) => setVals({ ...vals, symbols: e.target.value.toUpperCase() })} /></Field>
       <div className="grid two">
         <Field label="Evaluate timeframes"><div className="row gap">{TFS.map((t) => <label key={t} className="check"><input type="checkbox" disabled={!editable} checked={vals.timeframes.includes(t)} onChange={() => toggle("timeframes", t)} />{t}</label>)}</div></Field>
@@ -87,6 +99,13 @@ function StrategyForm() {
         {STRAT_FIELDS.map(([k, label]) => (
           <Field key={k} label={label}><input type="number" step="any" disabled={!editable} value={vals[k]} onChange={(e) => setVals({ ...vals, [k]: e.target.value })} /></Field>
         ))}
+      </div>
+      <h4>SMC rules (research definitions)</h4>
+      <div className="grid form">
+        {SMC_FIELDS.map(([k, label]) => (
+          <Field key={k} label={label}><input type="number" step="any" disabled={!editable} value={vals[k] ?? ""} onChange={(e) => setVals({ ...vals, [k]: e.target.value })} /></Field>
+        ))}
+        <Field label="Trend filter"><label className="check"><input type="checkbox" disabled={!editable} checked={!!vals.smc_trend_filter} onChange={(e) => setVals({ ...vals, smc_trend_filter: e.target.checked })} /> only trade on the side of EMA slow</label></Field>
       </div>
     </Card>
   );

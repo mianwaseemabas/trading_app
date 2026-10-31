@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -357,3 +358,52 @@ class TradeNote(Base):
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by: Mapped[str] = mapped_column(String(64), default="")
     updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
+
+
+class SignalApproval(Base):
+    """Manual approval decision for a strategy signal (human in the loop)."""
+
+    __tablename__ = "signal_approvals"
+
+    signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(TS, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="WAITING", index=True)  # WAITING|APPROVED|DECLINED|EXPIRED|FAILED
+    decided_by: Mapped[str] = mapped_column(String(64), default="")
+    decided_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    order_client_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)  # risk preview at approval time
+
+
+class SmcEvent(Base):
+    """Logged SMC detections on closed candles (for review and research)."""
+
+    __tablename__ = "smc_events"
+    __table_args__ = (UniqueConstraint("symbol", "timeframe", "kind", "dir", "time", name="uq_smc_event"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    timeframe: Mapped[str] = mapped_column(String(8))
+    kind: Mapped[str] = mapped_column(String(16))
+    dir: Mapped[str] = mapped_column(String(8))
+    time: Mapped[datetime] = mapped_column(TS, index=True)
+    level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    zone_low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    zone_high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class TradeAttachment(Base):
+    """Screenshot / file attached to a trade journal entry."""
+
+    __tablename__ = "trade_attachments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    position_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    created_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    filename: Mapped[str] = mapped_column(String(200))
+    content_type: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)

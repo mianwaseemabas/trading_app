@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 
 from .. import state
 from ..audit import event
-from ..models import BridgeNonce, LoginAttempt, Order, Signal, UserSession, utcnow
+from ..models import BridgeNonce, LoginAttempt, Order, Signal, SignalApproval, SmcEvent, UserSession, utcnow
 from . import market_data as md
 from . import strategy as strat
 from . import trading
-from .indicators import add_indicators, required_history
+from .indicators import required_history
 from .notifier import notify
 from .risk_engine import evaluate as risk_evaluate
 
@@ -44,8 +44,12 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
     if (utcnow() - (last_time + md.tf_delta(tf))).total_seconds() > md.TF_SECONDS[tf]:
         return None
 
-    ind = add_indicators(df, cfg)
+    ind = strat.prepare(df, cfg)
     res = strat.evaluate(ind, len(ind) - 1, cfg)
+    try:
+        log_smc_events(db, symbol, tf, ind, cfg)
+    except Exception:
+        log.exception("SMC event logging failed for %s %s", symbol, tf)
     sig = Signal(
         symbol=symbol, timeframe=tf, candle_time=last_time, strategy=cfg["name"], strategy_version=cfg["version"],
         action=res.action, entry_ref=res.entry_ref, stop_loss=res.stop_loss, take_profit=res.take_profit,
@@ -82,9 +86,49 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
         failed = [c["check"] for c in decision.checks if not c["passed"]]
         event(db, "risk", f"{symbol} {tf} {res.action} rejected: {', '.join(failed)}", "INFO")
         return sig
+    if controls.get("require_approval", True):
+        sig.status = "AWAITING"
+        db.add(SignalApproval(signal_id=sig.id, expires_at=utcnow() + timedelta(minutes=int(controls.get("approval_minutes", 60))),
+                              snapshot={k: v for k, v in decision.to_dict().items() if k != "checks"}))
+        event(db, "approval", f"{symbol} {tf} {res.action} setup waiting for your approval", "INFO")
+        notify(f"🟡 Setup {res.action} {symbol} {tf} waiting for approval (SL {res.stop_loss:.5f}, TP {res.take_profit:.5f})",
+               any(state.get(db, "notifications")[k] for k in ("notify_signals", "notify_orders")))
+        return sig
     trading.place_order(db, sig, decision, mode)
     sig.status = "ORDERED"
     return sig
+
+
+LOG_KINDS = {"sweep_bsl", "sweep_ssl", "bos", "choch", "fvg", "swing_high", "swing_low", "displacement"}
+
+
+def log_smc_events(db: Session, symbol: str, tf: str, ind, cfg: dict) -> None:
+    """Store SMC detections from the last few closed candles (idempotent)."""
+    from sqlalchemy.dialects.postgresql import insert
+    from . import smc
+    if "atr" not in ind:
+        return
+    window = ind.tail(250)
+    last_i = len(window) - 1
+    rows = []
+    for e in smc.analyze(window, cfg)["events"]:
+        if e["i"] < last_i - 3 or e["kind"] not in LOG_KINDS:
+            continue
+        data = {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in e.items()
+                if k not in ("i", "time", "kind", "dir", "level", "price", "zone_low", "zone_high")}
+        rows.append({"symbol": symbol, "timeframe": tf, "kind": e["kind"], "dir": e["dir"], "time": e["time"].to_pydatetime(),
+                     "level": e.get("level", e.get("price")), "zone_low": e.get("zone_low"), "zone_high": e.get("zone_high"), "data": data})
+    if rows:
+        db.execute(insert(SmcEvent).values(rows).on_conflict_do_nothing(constraint="uq_smc_event"))
+
+
+def expire_approvals(db: Session) -> None:
+    now = utcnow()
+    for a in db.scalars(select(SignalApproval).where(SignalApproval.status == "WAITING", SignalApproval.expires_at < now)).all():
+        a.status, a.decided_at, a.note = "EXPIRED", now, a.note or "not approved in time"
+        sig = db.get(Signal, a.signal_id)
+        if sig is not None and sig.status == "AWAITING":
+            sig.status = "EXPIRED"
 
 
 def tick(db: Session) -> None:
@@ -100,6 +144,7 @@ def tick(db: Session) -> None:
     trading.update_paper_positions(db)
     trading.expire_orders(db)
     trading.check_loss_limits(db, mode)
+    expire_approvals(db)
     db.commit()
 
     from . import news, pro

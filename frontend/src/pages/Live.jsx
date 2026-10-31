@@ -48,8 +48,10 @@ function ControlBar({ f, symbols, reload }) {
       ? <button className="btn" disabled={busy} onClick={() => run(() => api.post("/system/kill-switch", { engaged: false }), "Kill switch released").then(reload)}>Release kill switch</button>
       : <button className="btn danger" onClick={() => setKs(true)}>■ KILL SWITCH</button>)}>
       <div className="controls-grid">
-        <Switch on={c.auto_trading} disabled={!editable || busy} label="Automatic trading (strategy)" hint="When off, the strategy only shows signals — it never opens trades by itself"
-          onChange={(v) => put({ auto_trading: v }, v ? "Automatic trading ON" : "Automatic trading OFF — signals only")} />
+        <Switch on={c.auto_trading} disabled={!editable || busy} label="Strategy trading" hint="When off, the strategy only shows signals — it never opens trades by itself"
+          onChange={(v) => put({ auto_trading: v }, v ? "Strategy trading ON" : "Strategy trading OFF — signals only")} />
+        <Switch on={c.require_approval} disabled={!editable || busy || !c.auto_trading} label="Ask me before each strategy trade" hint="Strategy setups wait on the 'Setups to approve' page until you approve them"
+          onChange={(v) => put({ require_approval: v }, v ? "Approval required for every strategy trade" : "Strategy will trade without asking")} />
         <Switch on={c.manual_trading} disabled={!editable || busy} label="Manual trading (my orders)" hint="When off, nobody can place manual orders"
           onChange={(v) => put({ manual_trading: v }, v ? "Manual trading ON" : "Manual trading OFF")} />
         <Switch on={c.news_filter} disabled={!editable || busy} label={`News filter (${c.news_before_min}m before / ${c.news_after_min}m after)`}
@@ -225,6 +227,35 @@ function OrderTicket({ symbols, mode, onClose, onPlaced }) {
   );
 }
 
+// ----------------------------------------------------------- journal screenshots
+function Screenshots({ pid, items, onChange }) {
+  const [run, busy] = useAction();
+  const [big, setBig] = useState(null);
+  const upload = (file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    run(() => api.upload(`/positions/${pid}/attachments`, fd), "Screenshot added").then(onChange).catch(() => {});
+  };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div className="row between"><b className="small">Screenshots</b>
+        <label className="btn sm ghost" style={{ cursor: "pointer" }}>{busy ? "Uploading…" : "+ Add screenshot"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" style={{ display: "none" }} onChange={(e) => upload(e.target.files[0])} /></label>
+      </div>
+      <div className="row gap wrap" style={{ marginTop: 6 }}>
+        {items.length === 0 && <span className="muted small">Add your chart screenshot from TradingView or the broker app.</span>}
+        {items.map((a) => (
+          <div key={a.id} style={{ position: "relative" }}>
+            <img src={`/api/positions/attachments/${a.id}`} alt={a.filename} title={a.filename} onClick={() => setBig(a.id)} style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line2)", cursor: "zoom-in" }} />
+            <button className="btn sm ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 6px" }} title="Delete" onClick={() => window.confirm("Delete this screenshot?") && run(() => api.del(`/positions/attachments/${a.id}`), "Deleted").then(onChange)}>×</button>
+          </div>
+        ))}
+      </div>
+      {big && <Modal title="Screenshot" onClose={() => setBig(null)} wide><img src={`/api/positions/attachments/${big}`} alt="" style={{ maxWidth: "100%" }} /></Modal>}
+    </div>
+  );
+}
+
 // ----------------------------------------------------------- position detail
 export function PositionDetail({ id, onClose, onChanged }) {
   const { can } = useAuth();
@@ -295,6 +326,8 @@ export function PositionDetail({ id, onClose, onChanged }) {
               <button className="btn sm" disabled={busy} onClick={() => run(() => api.put(`/positions/${p.id}/note`, { note: note.note, tags: note.tags.split(",").map((x) => x.trim()).filter(Boolean), rating: note.rating || null }), "Journal saved").catch(() => {})}>Save journal</button>
             </>
           )}
+          <Screenshots pid={p.id} items={data.attachments || []} onChange={reload} />
+          {data.approval && <p className="small" style={{ marginTop: 8 }}><b>Approval:</b> {data.approval.status} by {data.approval.by || "—"} {fmt.dt(data.approval.at)} {data.approval.note && `— “${data.approval.note}”`}</p>}
           {data.signal && (
             <div className="small" style={{ marginTop: 10 }}>
               <b>Why it was opened:</b> {data.signal.strategy} · {data.signal.timeframe}

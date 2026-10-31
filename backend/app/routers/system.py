@@ -206,6 +206,12 @@ def put_risk(body: RiskIn, request: Request, user: User = Depends(require("risk.
 
 
 # -------------------------------------------------------------- strategy
+@router.get("/strategies")
+def list_strategies(user: User = Depends(active_user)):
+    from ..services.strategy import STRATEGIES
+    return [{"name": k, "description": v} for k, v in STRATEGIES.items()]
+
+
 @router.get("/strategy")
 def get_strategy(user: User = Depends(active_user), db: Session = Depends(get_db)):
     return state.get(db, "strategy")
@@ -220,6 +226,8 @@ STRATEGY_NUMERIC = {
     "rsi_long_max": (0, 100), "rsi_short_min": (0, 100), "rsi_short_max": (0, 100), "macd_fast": (2, 100),
     "macd_slow": (3, 200), "macd_signal": (2, 100), "atr_period": (2, 100), "atr_stop_mult": (0.3, 10),
     "reward_risk": (0.5, 10), "max_atr_pct": (0.01, 10),
+    "smc_swing_n": (1, 10), "smc_displacement_atr": (0.3, 5), "smc_fvg_min_atr": (0, 3), "smc_bos_window": (3, 200),
+    "smc_retest_window": (1, 200), "smc_max_stop_atr": (0.5, 10), "smc_reward_risk": (0.5, 10),
 }
 
 
@@ -254,7 +262,14 @@ def put_strategy(body: StrategyIn, request: Request, user: User = Depends(requir
             if not all(t in TF_SECONDS for t in v):
                 raise HTTPException(400, f"Timeframes must be among {list(TF_SECONDS)}")
             new[k] = list(dict.fromkeys(v))
-        elif k in ("name", "version"):
+        elif k == "name":
+            from ..services.strategy import STRATEGIES
+            if v not in STRATEGIES:
+                raise HTTPException(400, f"Unknown strategy; choose one of {list(STRATEGIES)}")
+            new[k] = v
+        elif k == "smc_trend_filter":
+            new[k] = bool(v)
+        elif k == "version":
             continue
         else:
             raise HTTPException(400, f"Unknown strategy setting '{k}'")
@@ -264,8 +279,8 @@ def put_strategy(body: StrategyIn, request: Request, user: User = Depends(requir
         raise HTTPException(400, "macd_fast must be smaller than macd_slow")
     if not set(new["trade_timeframes"]) <= set(new["timeframes"]):
         raise HTTPException(400, "trade_timeframes must be a subset of timeframes")
-    rule_keys = set(STRATEGY_NUMERIC)
-    if any(new[k] != cur[k] for k in rule_keys):
+    rule_keys = set(STRATEGY_NUMERIC) | {"name", "smc_trend_filter"}
+    if any(new.get(k) != cur.get(k) for k in rule_keys):
         new["version"] = _bump(cur["version"])
     changes = {k: {"from": cur[k], "to": new[k]} for k in new if new[k] != cur.get(k)}
     state.put(db, "strategy", new, by=user.username)
