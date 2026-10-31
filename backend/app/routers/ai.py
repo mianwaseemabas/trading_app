@@ -139,7 +139,13 @@ def put_settings(body: AISettingsIn, request: Request, user: User = Depends(requ
     ai.update(provider=body.provider, model=body.model.strip(), enabled=body.enabled and body.provider != "none",
               share_data=body.share_data)
     if body.api_key:
-        ai["api_key_enc"] = encrypt(body.api_key.strip())
+        k = body.api_key.strip()
+        if body.provider == "anthropic" and not k.startswith("sk-ant-"):
+            raise HTTPException(400, "This is not an Anthropic API key. Keys from console.anthropic.com start with 'sk-ant-' "
+                                     "(a Claude.ai subscription is not an API key).")
+        if body.provider == "openai" and not k.startswith("sk-"):
+            raise HTTPException(400, "This is not an OpenAI API key (they start with 'sk-').")
+        ai["api_key_enc"] = encrypt(k)
     if ai["enabled"] and not (ai["model"] and ai.get("api_key_enc")):
         raise HTTPException(400, "Enter the model name and API key to enable the assistant")
     state.put(db, "ai", ai, by=user.username)
