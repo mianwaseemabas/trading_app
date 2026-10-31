@@ -92,6 +92,10 @@ def test_connection(body: TestIn, user: User = Depends(require("system.settings"
     warn = []
     if r.get("can_withdraw"):
         warn.append("These keys CAN WITHDRAW funds. Create new keys with withdrawals disabled — the app never needs them.")
+    cs = state.get(db, "crypto_status")
+    cs["withdraw_enabled"] = bool(r.get("can_withdraw"))
+    state.put(db, "crypto_status", cs)
+    db.commit()
     return {"ok": True, "assets": r.get("assets", {}), "can_trade": r.get("can_trade", True), "warnings": warn}
 
 

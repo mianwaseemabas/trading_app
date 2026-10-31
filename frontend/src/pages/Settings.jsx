@@ -1,4 +1,4 @@
-import { BackupCard } from "../components/Helpers.jsx";
+import { BackupCard, SecurityCard } from "../components/Helpers.jsx";
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
@@ -44,6 +44,7 @@ export default function Settings() {
       <Card title="Notifications">
         <p className="small">Telegram, email and phone notifications — and the Telegram bot — are set up on the <a href="#/alerts">Alerts</a> page.</p>
       </Card>
+      <SecurityCard />
       <BackupCard />
       {can("trading.control") && (
         <Card title="Paper account">

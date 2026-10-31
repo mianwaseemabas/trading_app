@@ -142,7 +142,9 @@ def put_bot(body: BotIn, request: Request, user: User = Depends(require("system.
 # ------------------------------------------------------------------ backups
 RESTORE = ("To restore: 1) download the .qvx file from your Telegram; 2) on the server run "
            "`docker compose exec -T -e BACKUP_PASSWORD='your-backup-password' worker python -m app.backup_tool decrypt < FILE.qvx > restore.sql.gz`; "
-           "3) `./deploy/restore.sh restore.sql.gz`. Without the backup password the file cannot be opened — keep it safe (not only in this app).")
+           "3) `./deploy/restore.sh restore.sql.gz`. Without the backup password the file cannot be opened — keep it safe (not only in this app). "
+           "On a NEW server you also need the old SECRET_KEY from /opt/trading_app/.env, otherwise saved API keys/tokens must be re-entered: "
+           "keep a copy of .env in your password manager.")
 
 
 @router.get("/backup")
@@ -175,3 +177,49 @@ def put_backup(body: BackupIn, request: Request, user: User = Depends(require("s
     audit(db, "backup.settings", user=user, ip=client_ip(request), details={"offsite_telegram": c.get("offsite_telegram"), "password_changed": body.backup_password is not None})
     db.commit()
     return get_backup(user, db)
+
+
+# ------------------------------------------------------------------ security checklist
+@router.get("/security/checklist")
+def security_checklist(user: User = Depends(require("system.settings")), db: Session = Depends(get_db)):
+    """What the app can verify about its own security settings (no secrets returned)."""
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from ..config import settings
+    from ..models import LoginAttempt, UserSession, utcnow
+    from ..services import automation
+    from ..services.crypto import desk
+    from ..services.livegate import is_approved
+    users = db.scalars(select(User).where(User.is_active.is_(True))).all()
+    admins = [u for u in users if u.is_admin]
+    day = utcnow() - timedelta(hours=24)
+    fails = db.scalar(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.at >= day, LoginAttempt.success.is_(False))) or 0
+    sessions = db.scalar(select(func.count()).select_from(UserSession).where(UserSession.revoked.is_(False), UserSession.expires_at > utcnow())) or 0
+    tg = state.get(db, "alert_prefs").get("telegram", {})
+    bot = state.get(db, "tgbot")
+    bk = state.get(db, "backup")
+    flags = automation.flags_of(state.get(db, "controls"))
+    cc = state.get(db, "crypto")
+    st = state.get(db, "crypto_status")
+    items = [
+        ("2fa_admins", "All admins use two-factor login", all(u.totp_enabled for u in admins), f"{sum(u.totp_enabled for u in admins)}/{len(admins)} admins have 2FA", "#/account"),
+        ("2fa_required", "2FA is required for every user", all(u.require_2fa or u.totp_enabled for u in users), "Users page → edit user → require 2FA", "#/users"),
+        ("few_users", "Only the people who need access", len(users) <= 3, f"{len(users)} active user(s): " + ", ".join(u.username for u in users), "#/users"),
+        ("default_admin", "No unused default 'admin' account", not any(u.username == "admin" and not u.last_login_at for u in users), "disable the bootstrap 'admin' user if you use another account", "#/users"),
+        ("login_attacks", "No login attacks in the last 24 h", fails < 10, f"{fails} failed login(s) in 24 h", "#/audit"),
+        ("sessions", "Few open sessions", sessions <= 6, f"{sessions} active session(s) — sign out old ones on My account", "#/account"),
+        ("session_timeout", "Short idle timeout", settings.session_idle_minutes <= 60, f"idle timeout {settings.session_idle_minutes} min", None),
+        ("cookies", "Secure cookies (HTTPS only)", settings.cookie_secure, "COOKIE_SECURE=true in .env", None),
+        ("bot_pin", "Telegram bot protected by a PIN", (not bot.get("enabled")) or bool(bot.get("pin_hash")), "Alerts → Telegram bot → set PIN", "#/alerts"),
+        ("telegram_private", "Telegram alerts go to a private chat", not str(tg.get("chat_id", "")).startswith("-"), "a chat id starting with '-' is a group — anyone in it reads your alerts", "#/alerts"),
+        ("backup_offsite", "Encrypted off-server backup on", bool(bk.get("offsite_telegram") and bk.get("password_enc")), "System → Backups", "#/settings"),
+        ("live_locked", "Real money locked until you decide", not is_approved(db) and not flags.get("MT5_LIVE") and not flags.get("CRYPTO_LIVE"),
+         "live gate approved" if is_approved(db) else "live gate not approved — real-money orders impossible", "#/risk"),
+        ("exchange_keys", "Exchange keys cannot withdraw", (not desk.has_keys(db, cc.get("exchange", "binance"))) or not st.get("withdraw_enabled"),
+         "create keys with trading only, no withdrawals, IP-restricted to 37.60.252.21", "#/brokers"),
+    ]
+    out = [{"key": k, "label": lab, "ok": bool(okv), "detail": det, "link": link} for k, lab, okv, det, link in items]
+    return {"items": out, "score": sum(i["ok"] for i in out), "total": len(out),
+            "server_check": "On the server run: sudo /opt/trading_app/deploy/security-check.sh (read-only) and send the output for review."}

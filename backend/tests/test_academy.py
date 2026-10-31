@@ -115,7 +115,8 @@ def test_push_subscribe_send_and_cleanup(c):
     k = c.get("/api/push/key").json()
     assert len(webpush.unb64u(k["public_key"])) == 65 and k["devices"] == 0
     ua = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
-    sub = {"endpoint": "https://push.example.test/abc", "keys": {"p256dh": webpush.b64u(ua), "auth": webpush.b64u(b"x" * 16)}}
+    assert c.post("/api/push/subscribe", json={"endpoint": "https://169.254.169.254/latest", "keys": {"p256dh": "x", "auth": "y"}}).status_code == 400
+    sub = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": webpush.b64u(ua), "auth": webpush.b64u(b"x" * 16)}}
     assert c.post("/api/push/subscribe", json=sub).status_code == 200
     assert c.post("/api/push/subscribe", json={**sub, "endpoint": "http://bad"}).status_code == 400
     db = SessionLocal()

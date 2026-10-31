@@ -75,13 +75,18 @@ def _owner(db) -> User | None:
         if hasattr(User, "is_active") else db.scalar(select(User).where(User.is_admin.is_(True)).order_by(User.id))
 
 
-def handle(db, text: str) -> tuple[str, bool]:
+PIN_CMDS = ("/approve", "/kill", "/resume", "/decline")
+
+
+def handle(db, text: str, private: bool = True) -> tuple[str, bool]:
     """Returns (reply, delete_incoming_message)."""
     parts = text.strip().split()
     if not parts:
         return "", False
     cmd = parts[0].split("@")[0].lower()
     args = parts[1:]
+    if cmd in PIN_CMDS and not private:
+        return "For safety, /approve, /decline, /kill and /resume only work in your private chat with the bot.", cmd != "/decline"
     from fastapi import HTTPException
     try:
         if cmd in ("/start", "/help"):
@@ -186,7 +191,8 @@ def poll_once(api, offset: int, timeout: int = 25) -> int:
             m = u.get("message") or {}
             if str(m.get("chat", {}).get("id")) != chat or not m.get("text", "").startswith("/"):
                 continue
-            reply, delete = handle(db, m["text"])
+            private = m.get("chat", {}).get("type", "private") == "private" and str(m.get("from", {}).get("id", chat)) == chat
+            reply, delete = handle(db, m["text"], private)
             db.commit()
             if delete:
                 try:

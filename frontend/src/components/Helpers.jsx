@@ -122,3 +122,21 @@ export function ExplainChart({ symbol, tf }) {
     </>
   );
 }
+
+export function SecurityCard() {
+  const { data, reload } = useApi("/security/checklist");
+  if (!data) return null;
+  return (
+    <Card title={`🛡 Security checklist — ${data.score}/${data.total}`} actions={<button className="btn sm ghost" onClick={reload}>Re-check</button>}>
+      <ul className="sec-list">
+        {data.items.map((i) => (
+          <li key={i.key} className={i.ok ? "ok" : "bad"}>
+            <span>{i.ok ? "✓" : "✕"}</span>
+            <div><b className="small">{i.label}</b><div className="tiny muted">{i.detail} {i.link && !i.ok && <a href={i.link}>Fix →</a>}</div></div>
+          </li>
+        ))}
+      </ul>
+      <p className="tiny muted">{data.server_check}</p>
+    </Card>
+  );
+}

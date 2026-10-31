@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from datetime import timedelta
 
 from fastapi import Depends, HTTPException, Request
@@ -46,7 +47,7 @@ def _load_session(request: Request, db: Session, allow_pending_2fa: bool = False
     # CSRF: mutating requests must echo the per-session token in a header.
     if request.method not in SAFE_METHODS:
         header = request.headers.get("x-csrf-token", "")
-        if not header or header != sess.csrf_token:
+        if not header or not hmac.compare_digest(header, sess.csrf_token or ""):
             raise HTTPException(403, "CSRF token missing or invalid")
     # Sliding idle timeout (write at most once a minute).
     if (now - sess.last_seen_at).total_seconds() > 60:

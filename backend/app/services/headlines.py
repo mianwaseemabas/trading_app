@@ -92,7 +92,7 @@ def parse(xml_bytes: bytes, feed: dict) -> list[dict]:
     for it in items[:60]:
         title = html.unescape(_text(it, "title", f"{atom}title"))
         link = _text(it, "link", f"{atom}link", "guid")
-        if not title or not link:
+        if not title or not link or not link.lower().startswith(("https://", "http://")):
             continue
         summ = re.sub(r"<[^>]+>", " ", html.unescape(_text(it, "description", f"{atom}summary", f"{atom}content")))[:600]
         pub = _date(_text(it, "pubDate", f"{atom}published", f"{atom}updated", "{http://purl.org/dc/elements/1.1/}date"))

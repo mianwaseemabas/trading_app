@@ -148,6 +148,7 @@ def test_bot_commands_and_pin(c, db, monkeypatch):
     db.commit()
     assert not state.get(db, "trading")["kill_switch"]
     assert "Unknown command" in tgbot.handle(db, "/whatever")[0]
+    assert "private chat" in tgbot.handle(db, "/kill 4826", private=False)[0] and not state.get(db, "trading")["kill_switch"]
 
 
 def test_bot_poll_only_answers_own_chat(db):

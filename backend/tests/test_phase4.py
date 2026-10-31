@@ -123,3 +123,10 @@ def test_streak_exam_certificate(c, db):
     assert cert["score"] == 100 and cert["cert_id"].startswith("QVX-") and c.get("/api/academy").json()["certificate"]
     ev = c.get("/api/system/live-gate").json()["evidence"]["academy_exam_passed"]
     assert ev["passed"]
+
+
+def test_security_checklist(c):
+    r = c.get("/api/security/checklist").json()
+    keys = {i["key"]: i for i in r["items"]}
+    assert r["total"] == len(r["items"]) >= 12 and "security-check.sh" in r["server_check"]
+    assert keys["2fa_admins"]["ok"] is False and keys["live_locked"]["ok"] is True

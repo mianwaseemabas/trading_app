@@ -106,7 +106,14 @@ def send(db: Session, title: str, body: str = "", link: str = "#/alerts", user_i
     key, public = vapid_keys(db)
     data = json.dumps({"title": title[:120], "body": body[:400], "link": link}).encode()
     ok = bad = 0
+    from urllib.parse import urlparse
+
+    from ..routers.push import PUSH_HOSTS
     for s in subs:
+        host = (urlparse(s.endpoint).hostname or "").lower()
+        if not (host in PUSH_HOSTS or host.endswith((".push.apple.com", ".notify.windows.com", ".push.services.mozilla.com"))):
+            db.delete(s)
+            continue
         try:
             req = urllib.request.Request(s.endpoint, data=encrypt_payload(data, s.p256dh, s.auth), method="POST", headers={
                 "TTL": "86400", "Urgency": "high", "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream",

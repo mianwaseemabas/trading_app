@@ -12,6 +12,8 @@ from ..models import PushSubscription, User
 from ..services import webpush
 
 router = APIRouter(prefix="/api/push", tags=["push"])
+# Only real browser push services — the server never POSTs to any other address.
+PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com", "android.googleapis.com"}
 
 
 @router.get("/key")
@@ -30,7 +32,10 @@ class SubIn(BaseModel):
 
 @router.post("/subscribe")
 def subscribe(body: SubIn, user: User = Depends(require("dashboard.view")), db: Session = Depends(get_db)):
-    if not body.endpoint.startswith("https://") or not body.keys.get("p256dh") or not body.keys.get("auth"):
+    from urllib.parse import urlparse
+    host = (urlparse(body.endpoint).hostname or "").lower()
+    allowed = host in PUSH_HOSTS or host.endswith((".push.apple.com", ".notify.windows.com", ".push.services.mozilla.com"))
+    if not body.endpoint.startswith("https://") or not allowed or not body.keys.get("p256dh") or not body.keys.get("auth"):
         from fastapi import HTTPException
         raise HTTPException(400, "Invalid subscription")
     s = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))
