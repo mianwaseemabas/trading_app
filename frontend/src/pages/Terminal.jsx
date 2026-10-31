@@ -232,6 +232,7 @@ function OrderPanel({ symbol, t, quote, onPlaced }) {
         <button className={`bs-buy ${side === "BUY" ? "on" : ""}`} onClick={() => setSide("BUY")}>⊕ Buy<small>{quote ? Number(quote.ask).toFixed(digits) : ""}</small></button>
         <button className={`bs-sell ${side === "SELL" ? "on" : ""}`} disabled={crypto} title={crypto ? "Spot crypto: you can only buy, then sell what you own" : ""} onClick={() => setSide("SELL")}>⊖ Sell<small>{quote ? Number(quote.bid).toFixed(digits) : ""}</small></button>
       </div>
+      {crypto && <div className="tiny muted">Spot crypto = buy only (no borrowing). You sell by closing a coin you own. To trade falling prices use the broker's BTCUSD (CFD) on demo.</div>}
       <label className="olbl">Size</label>
       <div className="seg full">
         <button className={f.sizing === "risk_amount" ? "active" : ""} onClick={() => setF({ ...f, sizing: "risk_amount" })}>Max loss</button>
