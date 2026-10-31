@@ -29,7 +29,10 @@ function Settings({ s, reload }) {
             {Object.entries(s.providers).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
           </select>
         </Field>
-        <Field label="Model" hint={hint}><input value={v.model} onChange={(e) => setV({ ...v, model: e.target.value })} placeholder={hint} /></Field>
+        <Field label="Model" hint={v.provider === "anthropic" && v.model && !v.model.startsWith("claude-") ? "Anthropic model names start with claude- (e.g. claude-sonnet-5-5)" : hint}>
+          <input list="ai-models" value={v.model} onChange={(e) => setV({ ...v, model: e.target.value.trim() })} placeholder={hint} />
+          <datalist id="ai-models">{(s.providers[v.provider]?.models || []).map((m) => <option key={m} value={m} />)}</datalist>
+        </Field>
         <Field label="API key" hint={s.api_key_set ? "Saved ✓ — leave empty to keep" : "Not set"}>
           <input type="password" autoComplete="off" value={v.api_key} placeholder={s.api_key_set ? "••••••••" : ""} onChange={(e) => setV({ ...v, api_key: e.target.value })} />
         </Field>

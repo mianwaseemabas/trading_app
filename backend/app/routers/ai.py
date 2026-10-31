@@ -28,8 +28,9 @@ from ..services import trading
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 PROVIDERS = {
-    "openai": {"label": "OpenAI", "url": "https://api.openai.com/v1/chat/completions", "model_hint": "e.g. gpt-4o-mini"},
-    "anthropic": {"label": "Anthropic Claude", "url": "https://api.anthropic.com/v1/messages", "model_hint": "e.g. claude-sonnet-5-5"},
+    "openai": {"label": "OpenAI", "url": "https://api.openai.com/v1/chat/completions", "model_hint": "e.g. gpt-4o-mini", "models": []},
+    "anthropic": {"label": "Anthropic Claude", "url": "https://api.anthropic.com/v1/messages", "model_hint": "e.g. claude-sonnet-5-5",
+                  "models": ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]},
 }
 SYSTEM_PROMPT = """You are the built-in trading coach of "Qivynex Trade", a personal forex trading app.
 Your job: explain what the app is doing and teach the user forex trading in plain, friendly language.
@@ -132,6 +133,8 @@ def put_settings(body: AISettingsIn, request: Request, user: User = Depends(requ
         raise HTTPException(403, "Password confirmation failed")
     if body.provider not in ("none", *PROVIDERS):
         raise HTTPException(400, "Unknown provider")
+    if body.provider == "anthropic" and body.model.strip() and not body.model.strip().startswith("claude-"):
+        raise HTTPException(400, f"'{body.model.strip()}' is not an Anthropic model name. Use e.g. claude-sonnet-5-5")
     ai = state.get_locked(db, "ai")
     ai.update(provider=body.provider, model=body.model.strip(), enabled=body.enabled and body.provider != "none",
               share_data=body.share_data)
