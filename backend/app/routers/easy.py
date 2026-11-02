@@ -139,6 +139,12 @@ ALERT_TYPES = ["AUTO_TRADE", "ORDER_FILLED", "STOP_HIT", "TARGET_1_HIT", "APPROV
                "KILL_SWITCH_ACTIVE", "HEALTH", "AI_BRIEF", "AI_COACH", "MARKET_NEWS"]
 
 
+def _test_risk(cur: dict) -> dict:
+    """Autopilot limits, but never looser than what is configured now: raising a limit needs the
+    password on Risk & Strategy, and the risk settings are shared with the broker and live modes."""
+    return {k: min(cur[k], v) if isinstance(cur.get(k), (int, float)) and cur.get(k) else v for k, v in TEST_RISK.items()}
+
+
 def _plan(db: Session) -> list[dict]:
     tr = state.get(db, "trading")
     cc = state.get(db, "crypto")
@@ -148,7 +154,9 @@ def _plan(db: Session) -> list[dict]:
     accounts = ["PAPER"] + (["MT5_DEMO"] if tr["mode"] == "MT5_DEMO" else []) + \
         ({"PAPER": ["CRYPTO_PAPER"], "TEST": ["CRYPTO_TEST"]}.get(cc.get("mode"), []))
     risk = state.get(db, "risk")
-    steps = [{"what": "Safe test limits", "detail": ", ".join(f"{k.replace('_', ' ')} {risk.get(k)} → {v}" for k, v in TEST_RISK.items() if risk.get(k) != v) or "already set"},
+    target = _test_risk(risk)
+    steps = [{"what": "Safe test limits (only ever lowered)",
+              "detail": ", ".join(f"{k.replace('_', ' ')} {risk.get(k)} → {v}" for k, v in target.items() if risk.get(k) != v) or "already set"},
              {"what": "Auto-trade ON (practice/test only)", "detail": ", ".join(accounts) + " · real-money accounts stay OFF"},
              {"what": "Safety switches", "detail": "strategy trading on, news filter on"},
              {"what": "News automation", "detail": "news breakout on" + (", AI news filter on" if ai.get("enabled") else " (AI news filter needs the AI assistant)")},
@@ -180,7 +188,8 @@ def start_autopilot(request: Request, user: User = Depends(require("trading.cont
         state.put(db, "trading", tr, by=user.username)
     risk = state.get_locked(db, "risk")
     before = {k: risk.get(k) for k in TEST_RISK}
-    risk.update(TEST_RISK)
+    applied = _test_risk(risk)
+    risk.update(applied)
     state.put(db, "risk", risk, by=user.username)
     c = state.get_locked(db, "controls")
     flags = {m: False for m in ("PAPER", "MT5_DEMO", "MT5_LIVE", "CRYPTO_PAPER", "CRYPTO_TEST", "CRYPTO_LIVE")}
@@ -200,8 +209,9 @@ def start_autopilot(request: Request, user: User = Depends(require("trading.cont
     j = state.get_locked(db, "ai_jobs")
     j.update(brief_enabled=True, coach_enabled=True)
     state.put(db, "ai_jobs", j, by=user.username)
-    state.put(db, "autopilot", {"on": True, "started_at": utcnow().isoformat(), "by": user.username, "before_risk": before, "accounts": accounts})
-    audit(db, "autopilot.start", user=user, ip=client_ip(request), details={"accounts": accounts, "risk": TEST_RISK})
+    state.put(db, "autopilot", {"on": True, "started_at": utcnow().isoformat(), "by": user.username, "before_risk": before,
+                                "applied_risk": applied, "accounts": accounts})
+    audit(db, "autopilot.start", user=user, ip=client_ip(request), details={"accounts": accounts, "risk": applied, "before": before})
     from ..services.alerts import raise_alert
     raise_alert(db, "MODE_CHANGED", "🤖 Autopilot (practice) started", "Auto-trade on: " + ", ".join(accounts) + ". Real money stays off. "
                 "Stop any time on Home.", dedup=f"autopilot:{utcnow().isoformat()}", link="#/home")
@@ -219,6 +229,8 @@ def stop_autopilot(request: Request, user: User = Depends(require("trading.contr
     na["breakout"] = False
     state.put(db, "news_auto", na, by=user.username)
     ap = state.get(db, "autopilot")
+    # The (lower) Autopilot risk limits stay in place: putting the old ones back would raise risk
+    # without the password check. Raise them on Risk & Strategy if wanted.
     ap.update(on=False, stopped_at=utcnow().isoformat())
     state.put(db, "autopilot", ap)
     audit(db, "autopilot.stop", user=user, ip=client_ip(request))

@@ -326,7 +326,7 @@ def get_automation(user: User = Depends(require("dashboard.view")), db: Session 
             "min_score": c.get("auto_min_score", 70), "min_verdict": c.get("auto_min_verdict", "PAPER_TEST"),
             "live_gate_approved": is_approved(db),
             "note": "Auto-trade places qualified setups without asking. Every order still passes the risk engine. "
-                    "Real-money modes also need an approved, unexpired live gate."}
+                    "Real-money modes also need an approved, unexpired live gate and the RESEARCH_SUPPORTED verdict."}
 
 
 class AutoIn(BaseModel):

@@ -121,6 +121,16 @@ def test_auto_ok_rules(db):
     assert not automation.auto_ok(db, "PAPER", SimpleNamespace(verdict="WATCH", score=90))
     assert not automation.auto_ok(db, "PAPER", SimpleNamespace(verdict="PAPER_TEST", score=60))
     assert not livegate.is_approved(db) and not automation.auto_ok(db, "CRYPTO_LIVE", good)  # live needs the gate
+    # with an approved gate, real money still needs RESEARCH_SUPPORTED — PAPER_TEST is not enough
+    from datetime import timedelta
+    g = state.get(db, "live_gate")
+    state.put(db, "live_gate", {**g, "approved": True, "expires_at": (utcnow() + timedelta(days=1)).isoformat()})
+    db.commit()
+    assert livegate.is_approved(db)
+    assert not automation.auto_ok(db, "CRYPTO_LIVE", good)
+    assert automation.auto_ok(db, "CRYPTO_LIVE", SimpleNamespace(verdict="RESEARCH_SUPPORTED", score=80))
+    state.put(db, "live_gate", g)
+    db.commit()
     ctl["auto_execute"] = {}
     state.put(db, "controls", ctl)
     db.commit()

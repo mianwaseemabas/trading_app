@@ -97,6 +97,10 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
         event(db, "approval", f"{symbol} {tf} {res.action} setup waiting for your approval ({a.score}/100)", "INFO")
         return sig
     o = trading.place_order(db, sig, decision, mode)
+    if o.status == "REJECTED":
+        sig.status = "REJECTED"
+        assess.lifecycle(db, sig.id, "ORDER_REJECTED", f"{mode} · {o.error or 'order rejected'}")
+        return sig
     sig.status = "ORDERED"
     assess.lifecycle(db, sig.id, "AUTO_ORDERED", f"{mode} · no approval (auto-trade on)")
     announce(db, sig, o.filled_volume or o.volume, o.fill_price or o.requested_price, mode)
@@ -277,16 +281,18 @@ def tick(db: Session) -> None:
             except Exception as e:  # fail closed for this symbol, keep the engine alive
                 db.rollback()
                 log.exception("evaluate %s %s failed", symbol, tf)
+                event(db, "engine", f"Evaluation failed for {symbol} {tf}: {e}", "ERROR")
+                db.commit()
         if news_on and ntf:
             try:
                 ncfg = news_trading.strategy_cfg(db, cfg, symbol, ntf)
                 if ncfg["news_events"]:
                     evaluate_symbol(db, symbol, ntf, ncfg, mode)
                     db.commit()
-            except Exception:
+            except Exception as e:  # keep the engine alive; the remaining symbols still get evaluated
                 db.rollback()
                 log.exception("news breakout %s failed", symbol)
-                event(db, "engine", f"Evaluation failed for {symbol} {tf}: {e}", "ERROR")
+                event(db, "engine", f"News breakout evaluation failed for {symbol} {ntf}: {e}", "ERROR")
                 db.commit()
 
 
