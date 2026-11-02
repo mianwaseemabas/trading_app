@@ -30,6 +30,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
@@ -141,6 +142,10 @@ class Capital:
         self.cst = self.xst = None
         self.last_call = 0.0
         self.session_info: dict = {}
+
+    def is_live_host(self) -> bool:
+        host = urlparse(self.base).hostname or ""
+        return host == (urlparse(BASE_LIVE).hostname or "") and host != (urlparse(BASE_DEMO).hostname or "")
 
     def login(self):
         r = self.http.post(f"{self.base}/session", headers={"X-CAP-API-KEY": Cfg.api_key, "Content-Type": "application/json"},
@@ -395,8 +400,14 @@ class Connector:
         b = acc.get("balance", {})
         balance, pl, avail = float(b.get("balance", 0)), float(b.get("profitLoss", 0)), float(b.get("available", 0))
         equity = balance + pl
-        return {"login": acc.get("accountId", ""), "server": f"Capital.com {'LIVE' if Cfg.is_live else 'demo'} ({acc.get('accountName', '')})",
-                "trade_mode": 2 if Cfg.is_live else 0, "currency": acc.get("currency", "USD"), "balance": round(balance, 2),
+        # The account type comes from the server that actually accepted the session (demo logins only work on the
+        # demo host), not from the configured setting — so a stale or wrong setting is caught by the app's mode check.
+        live = self.cap.is_live_host()
+        if live != Cfg.is_live:
+            log.error("Session is on the %s server but the configured environment is %s", "LIVE" if live else "demo",
+                      "live" if Cfg.is_live else "demo")
+        return {"login": acc.get("accountId", ""), "server": f"Capital.com {'LIVE' if live else 'demo'} ({acc.get('accountName', '')})",
+                "trade_mode": 2 if live else 0, "currency": acc.get("currency", "USD"), "balance": round(balance, 2),
                 "equity": round(equity, 2), "margin": round(max(0.0, equity - avail), 2), "margin_free": round(avail, 2),
                 "leverage": self.leverage}
 

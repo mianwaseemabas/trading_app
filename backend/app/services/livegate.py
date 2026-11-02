@@ -17,6 +17,7 @@ from ..models import BacktestRun, DataIncident, Position, User, utcnow
 APPROVAL_DAYS = 30
 MIN_TRADES = 50
 MIN_DAYS = 28
+EVIDENCE_MODES = ["MT5_DEMO", "CRYPTO_TEST"]  # broker demo / exchange testnet
 
 
 def is_approved(db: Session) -> bool:
@@ -25,6 +26,46 @@ def is_approved(db: Session) -> bool:
         return False
     exp = g.get("expires_at")
     return bool(exp) and datetime.fromisoformat(exp) > utcnow()
+
+
+def enforce(db: Session) -> list[str]:
+    """When the approval is missing or expired: leave every real-money mode and switch real-money auto-trade off,
+    so a later re-approval never silently resumes automatic real-money orders (the owner re-enables with password)."""
+    if is_approved(db):
+        return []
+    from ..audit import event
+    done = []
+    tr = state.get(db, "trading")
+    if tr["mode"] == "MT5_LIVE":
+        tr = state.get_locked(db, "trading")
+        tr["mode"] = "MT5_DEMO"
+        state.put(db, "trading", tr)
+        done.append("BROKER LIVE → BROKER DEMO")
+    cc = state.get(db, "crypto")
+    if cc.get("mode") == "LIVE":
+        cc = state.get_locked(db, "crypto")
+        cc["mode"] = "PAPER"
+        state.put(db, "crypto", cc)
+        done.append("CRYPTO LIVE → CRYPTO PAPER")
+    c = state.get(db, "controls")
+    flags = dict(c.get("auto_execute") or {})
+    live_on = [m for m in ("MT5_LIVE", "CRYPTO_LIVE") if flags.get(m)]
+    if live_on:
+        c = state.get_locked(db, "controls")
+        c["auto_execute"] = {**flags, **{m: False for m in live_on}}
+        state.put(db, "controls", c)
+        done.append("real-money auto-trade OFF (" + ", ".join(live_on) + ")")
+    if done:
+        event(db, "risk", "Live gate approval expired or revoked: " + "; ".join(done), "WARNING")
+        try:
+            from .alerts import raise_alert
+            with db.begin_nested():
+                raise_alert(db, "LIVE_GATE_EXPIRED", "Real-money trading stopped", "The live approval expired or was revoked: " + "; ".join(done)
+                            + ". Renew it on Risk & Strategy, then switch auto-trade on again with your password.",
+                            severity="critical", dedup=f"gate-expired:{utcnow():%Y%m%d%H}", link="#/risk")
+        except Exception:  # alerting must never block the safety switch
+            pass
+    return done
 
 
 def self_test() -> list[dict]:
@@ -56,6 +97,8 @@ def self_test() -> list[dict]:
         ("averaging down is rejected", ctx(open_positions=[OpenPos("EURUSD", "BUY", -5)], cfg={**DEFAULTS["risk"], "max_concurrent_positions": 3,
                                                                                              "max_positions_per_symbol": 2}), False),
         ("daily trade count is enforced", ctx(trades_today=99), False),
+        ("correlated currency exposure is limited", ctx(open_positions=[OpenPos("GBPUSD", "BUY"), OpenPos("AUDUSD", "BUY")],
+                                                        cfg={**DEFAULTS["risk"], "max_concurrent_positions": 5, "max_same_currency_positions": 2}), False),
         ("unknown mode cannot trade", ctx(mode="OFF"), False),
     ]
     out = []
@@ -84,15 +127,21 @@ def evidence(db: Session, user: User | None = None) -> dict:
         "detail": f"backtest #{good.id}: final-test {good.metrics['segments']['final_test']['trades']} trades, PF {good.metrics['segments']['final_test']['profit_factor']}"
         if good else f"need a backtest of '{strat['name']}' whose final 20% has ≥30 trades, profit factor ≥1.1 and positive net"}
     since = utcnow() - timedelta(days=120)
-    rows = db.scalars(select(Position).where(Position.mode.in_(["PAPER", "MT5_DEMO"]), Position.status == "CLOSED",
-                                             Position.closed_at >= since, Position.realized_pnl.is_not(None))).all()
+
+    def closed(modes):
+        return db.scalars(select(Position).where(Position.mode.in_(modes), Position.status == "CLOSED",
+                                                 Position.closed_at >= since, Position.realized_pnl.is_not(None))).all()
+    # Only real broker fills count: the app's own practice fills have no requotes, partial fills or real slippage.
+    rows = closed(EVIDENCE_MODES)
     n = len(rows)
     span = (max(p.closed_at for p in rows) - min(p.opened_at for p in rows)).days if rows else 0
     net = sum(p.realized_pnl for p in rows)
+    practice_n = len(closed(["PAPER", "CRYPTO_PAPER"]))
     rec_open = db.scalar(select(func.count()).select_from(DataIncident).where(DataIncident.kind == "RECONCILIATION", DataIncident.ended_at.is_(None))) or 0
     items["demo_results_satisfactory"] = {
         "passed": n >= MIN_TRADES and span >= MIN_DAYS and net > 0 and rec_open == 0,
-        "detail": f"{n}/{MIN_TRADES} closed practice/demo trades over {span}/{MIN_DAYS} days, net {net:+.2f}, open reconciliation incidents {rec_open}"}
+        "detail": f"{n}/{MIN_TRADES} closed broker-demo/testnet trades over {span}/{MIN_DAYS} days, net {net:+.2f}, "
+                  f"open reconciliation incidents {rec_open} (practice trades don't count: {practice_n})"}
     st = g.get("self_test") or {}
     fresh = bool(st.get("at")) and datetime.fromisoformat(st["at"]) > utcnow() - timedelta(days=7)
     items["risk_failure_tests_passed"] = {"passed": bool(st.get("passed")) and fresh,

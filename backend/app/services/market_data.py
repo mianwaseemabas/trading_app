@@ -22,6 +22,10 @@ DEFAULT_SPECS = {
     "AUDUSD": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="AUD", currency_profit="USD"),
     "USDCHF": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="USD", currency_profit="CHF"),
     "USDCAD": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="USD", currency_profit="CAD"),
+    "NZDUSD": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="NZD", currency_profit="USD"),
+    "EURGBP": dict(digits=5, point=0.00001, tick_size=0.00001, contract_size=100000, currency_base="EUR", currency_profit="GBP"),
+    "EURJPY": dict(digits=3, point=0.001, tick_size=0.001, contract_size=100000, currency_base="EUR", currency_profit="JPY"),
+    "GBPJPY": dict(digits=3, point=0.001, tick_size=0.001, contract_size=100000, currency_base="GBP", currency_profit="JPY"),
     # Commodities and indices (typical CFD sizes; the real broker values replace these once a broker is connected)
     "XAUUSD": dict(digits=2, point=0.01, tick_size=0.01, contract_size=100, currency_base="XAU", currency_profit="USD"),
     "GOLD": dict(digits=2, point=0.01, tick_size=0.01, contract_size=100, currency_base="XAU", currency_profit="USD"),
@@ -193,7 +197,7 @@ def conversion_rate(ccy: str, account_ccy: str, quotes: dict[str, Quote]) -> flo
 
 
 # ------------------------------------------------------------------ simulator
-SIM_START = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 150.00, "AUDUSD": 0.6600, "USDCHF": 0.8800, "USDCAD": 1.3600,
+SIM_START = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 150.00, "AUDUSD": 0.6600, "USDCHF": 0.8800, "USDCAD": 1.3600, "NZDUSD": 0.6000, "EURGBP": 0.8550, "EURJPY": 162.80, "GBPJPY": 190.50,
              "XAUUSD": 2650.0, "GOLD": 2650.0, "XAGUSD": 31.0, "SILVER": 31.0, "USOIL": 72.0, "XTIUSD": 72.0, "OIL_CRUDE": 72.0,
              "UKOIL": 76.0, "OIL_BRENT": 76.0, "US500": 5900.0, "US100": 20800.0, "NAS100": 20800.0, "US30": 43000.0, "DE40": 19500.0,
              "GER40": 19500.0, "UK100": 8200.0}

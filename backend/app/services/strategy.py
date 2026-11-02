@@ -32,6 +32,9 @@ STRATEGIES = {
     "rsi2_meanrev": "RSI-2 pullback in an uptrend (mean reversion, higher win rate, smaller wins)",
     "bb_squeeze": "Bollinger squeeze → breakout (volatility expansion)",
     "ema_cross_adx": "EMA 9/21 cross with MACD + ADX filter (momentum)",
+    "london_breakout": "London open breakout of the Asian session range (forex M15/H1)",
+    "supertrend_ema": "Supertrend (10, 3) flip with EMA 200 filter (trend following)",
+    "ichimoku_tk": "Ichimoku Tenkan/Kijun cross with cloud + Chikou confirmation (trend)",
 }
 
 
@@ -53,7 +56,7 @@ def _f(x) -> float | None:
         return None
 
 
-EXTRA = {"donchian_breakout", "rsi2_meanrev", "bb_squeeze", "ema_cross_adx"}
+EXTRA = {"donchian_breakout", "rsi2_meanrev", "bb_squeeze", "ema_cross_adx", "london_breakout", "supertrend_ema", "ichimoku_tk"}
 
 
 def prepare(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:

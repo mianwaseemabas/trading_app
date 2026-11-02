@@ -60,3 +60,17 @@ def init_db() -> None:
         conn.execute(text("SELECT pg_advisory_xact_lock(724001)"))
         Base.metadata.create_all(bind=conn)
         conn.execute(text(AUDIT_TRIGGER_SQL))
+        run_migrations(conn)
+
+
+def run_migrations(conn) -> None:
+    """Apply Alembic migrations (schema changes to existing tables) inside the caller's locked transaction."""
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    cfg.attributes["connection"] = conn
+    command.upgrade(cfg, "head")

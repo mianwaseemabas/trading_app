@@ -99,6 +99,15 @@ def value_per_price_unit(ctx: RiskContext) -> float | None:
     return None
 
 
+def _legs(symbol: str, side: str) -> dict | None:
+    """Currency legs of a forex/metal pair: BUY EURUSD = long EUR (+1), short USD (-1). None for other assets."""
+    s = (symbol or "").upper()
+    if len(s) != 6 or not s.isalpha():
+        return None
+    sign = 1 if side == "BUY" else -1
+    return {s[:3]: sign, s[3:]: -sign}
+
+
 def floor_to_step(x: float, step: float) -> float:
     if step <= 0:
         return x
@@ -152,6 +161,15 @@ def evaluate(ctx: RiskContext) -> RiskDecision:
           f"{len(same_symbol)} on {ctx.symbol}")
     check("no hedging (opposite position on symbol)", not any(p.side != ctx.side for p in same_symbol))
     check("no averaging down", not any(p.side == ctx.side and p.unrealized_pnl < 0 for p in same_symbol))
+    lim = int(cfg.get("max_same_currency_positions", 0) or 0)
+    if lim and _legs(ctx.symbol, ctx.side):
+        crowded = []
+        for ccy, sign in _legs(ctx.symbol, ctx.side).items():
+            n = sum(1 for p in ctx.open_positions if (_legs(p.symbol, p.side) or {}).get(ccy) == sign)
+            if n >= lim:
+                crowded.append(f"{'long' if sign > 0 else 'short'} {ccy} ×{n}")
+        check("currency exposure within limit (correlated pairs)", not crowded,
+              (", ".join(crowded) + f" already open (max {lim})") if crowded else f"max {lim} per currency and direction")
 
     day_limit = ctx.day_anchor_equity * cfg["daily_loss_pct"] / 100
     week_limit = ctx.week_anchor_equity * cfg["weekly_loss_pct"] / 100

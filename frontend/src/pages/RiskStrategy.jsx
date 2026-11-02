@@ -10,6 +10,7 @@ const RISK_LABELS = {
   weekly_loss_pct: ["Weekly loss stop (%)", ""],
   max_concurrent_positions: ["Max concurrent positions", ""],
   max_positions_per_symbol: ["Max positions per symbol", ""],
+  max_same_currency_positions: ["Max positions on one currency (same direction)", "E.g. long EURUSD + long GBPUSD = 2× short USD"],
   max_trades_per_day: ["Max new trades per day", "Stops over-trading; pilot default 3"],
   max_spread_points: ["Max spread (points)", "10 points = 1 pip on 5-digit pairs"],
   max_slippage_points: ["Max slippage (points)", "Also added to the risk calculation"],
@@ -21,21 +22,36 @@ const RISK_LABELS = {
   include_unrealized_in_limits: ["Include unrealized P&L in loss limits", ""],
 };
 
+const PROFILES = [["practice", "Practice"], ["demo", "Broker demo"], ["live", "Real money"]];
+
 function RiskForm() {
   const { can } = useAuth();
-  const { data, reload } = useApi("/system/risk");
+  const [profile, setProfile] = useState("practice");
+  const { data, reload } = useApi(`/system/risk?profile=${profile}`);
   const [vals, setVals] = useState(null);
   const [prompt, setPrompt] = useState(false);
   const [run, busy] = useAction();
-  useEffect(() => { if (data) setVals(data.risk); }, [data]);
-  if (!vals) return <Card title="Risk policy"><p className="muted">Loading…</p></Card>;
+  useEffect(() => { if (data && data.profile === profile) setVals(data.risk); }, [data, profile]);
+  const tabs = (
+    <div className="row gap wrap" style={{ marginBottom: 12 }}>
+      {PROFILES.map(([k, label]) => (
+        <button key={k} className={`btn sm ${profile === k ? "primary" : ""}`} onClick={() => { setVals(null); setProfile(k); }}>
+          {label}{data?.active_profile === k ? " • in use" : ""}
+        </button>
+      ))}
+    </div>
+  );
+  if (!vals || !data || data.profile !== profile) return <Card title="Risk policy">{tabs}<p className="muted">Loading…</p></Card>;
   const editable = can("risk.edit");
-  const save = (password) => run(() => api.put("/system/risk", { values: vals, password }), "Risk settings saved").then(reload);
+  const save = (password) => run(() => api.put("/system/risk", { values: vals, password, profile }), "Risk settings saved").then(reload);
   const onSave = async () => {
     try { await save(undefined); } catch (e) { if (/Password/.test(e.message)) setPrompt(true); }
   };
   return (
     <Card title="Risk policy" actions={editable && <button className="btn primary sm" disabled={busy} onClick={onSave}>Save</button>}>
+      {tabs}
+      <p className="muted small">Applies to: {data.profiles?.[profile]}. Each profile is separate — changing practice limits never changes real-money limits.
+        {profile === "live" && " Real-money limits can never be looser than broker demo."}</p>
       <div className="row gap wrap small" style={{ marginBottom: 12 }}>
         <Badge tone="ok">Stop-loss mandatory</Badge><Badge tone="ok">Martingale disabled</Badge><Badge tone="ok">Grid / loss recovery disabled</Badge><Badge tone="ok">Averaging down disabled</Badge>
       </div>
@@ -70,6 +86,13 @@ const SMC_FIELDS = [
 const STRATS = [
   { k: "trend_pullback", label: "EMA trend pullback (baseline)", d: "LONG when EMA fast > EMA slow, close > EMA slow, MACD histogram crosses above zero, RSI within the long band and volatility is normal. SHORT is the mirror image." },
   { k: "smc_sweep_bos", label: "SMC: sweep → BOS/CHoCH → retest", d: "Waits for a liquidity sweep (wick beyond a swing level, close back inside), then a structure break with a displacement candle, then a retest of the fair value gap or order block. Stop beyond the sweep extreme; target = stop × reward." },
+  { k: "donchian_breakout", label: "Donchian breakout", d: "Trend following: close breaks the 20-candle high/low with price on the EMA 200 side and ADX ≥ 20. Stop 2×ATR, target 2.5×stop. Wins ~30–45% with larger winners." },
+  { k: "rsi2_meanrev", label: "RSI-2 mean reversion", d: "Buys short dips in an uptrend: above EMA 200 and RSI-2 below 10 (sell mirror). Stop 1.2×ATR, target 1.25×stop. Wins often, small winners." },
+  { k: "bb_squeeze", label: "Bollinger squeeze", d: "After a low-volatility squeeze, trades the close outside the band in the EMA 50 direction. Stop 1.5×ATR, target 2×stop." },
+  { k: "ema_cross_adx", label: "EMA 9/21 + ADX", d: "Momentum: EMA 9 crosses EMA 21 with MACD on the same side and ADX ≥ 20. Stop 1.5×ATR, target 2×stop." },
+  { k: "london_breakout", label: "London breakout", d: "Session breakout: the 00:00–07:00 UTC Asian range, traded on the first close outside it between 07:00 and 10:00 UTC. Skips unusually wide/narrow ranges. Stop at mid-range, target 1.5×stop. Best on M15/H1 EUR, GBP and CHF pairs." },
+  { k: "supertrend_ema", label: "Supertrend + EMA 200", d: "Trend following: Supertrend (10, 3) flips in the direction of EMA 200. Stop at the Supertrend line (1–3×ATR), target 2×stop." },
+  { k: "ichimoku_tk", label: "Ichimoku TK cross", d: "Tenkan crosses Kijun with price outside the cloud on the same side and Chikou confirming (close vs 26 candles ago). No trade while price is inside the cloud. Target 2×stop." },
 ];
 const TFS = ["M15", "M30", "H1", "H4"];
 

@@ -35,6 +35,7 @@ DEFAULTS: dict[str, Any] = {
         "weekly_loss_pct": 4.0,
         "max_concurrent_positions": 1,
         "max_positions_per_symbol": 1,
+        "max_same_currency_positions": 2,  # open positions leaning the same way on one currency (e.g. two USD shorts)
         "max_spread_points": 25,
         "max_slippage_points": 10,
         "commission_per_lot": 7.0,  # round-turn, account currency
@@ -50,7 +51,7 @@ DEFAULTS: dict[str, Any] = {
     "strategy": {
         "name": "trend_pullback",
         "version": "1.0.0",
-        "symbols": ["EURUSD", "GBPUSD", "USDJPY"],
+        "symbols": ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP"],
         "timeframes": ["M15", "H1"],
         "ema_fast": 50,
         "ema_slow": 200,
@@ -104,13 +105,16 @@ DEFAULTS: dict[str, Any] = {
         "ctrader": {"client_id": "", "client_secret_enc": "", "access_token_enc": "", "refresh_token_enc": "", "account_login": ""},
     },
     # Trading on/off switches and filters (Live trading page control bar).
-    "crypto": {"mode": "OFF", "exchange": "binance", "strategy": "", "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "crypto": {"mode": "OFF", "exchange": "binance", "strategy": "", "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"],
                "timeframes": ["M15", "H1", "H4", "D1"], "signal_timeframes": ["H1"], "paper_cash": 100.0, "paper_start": 100.0,
                "fee_pct": 0.1, "max_spread_pct": 0.15, "slippage_pct": 0.05, "allow_real": False, "signals": True},
     "crypto_keys": {"binance": {}, "okx": {}, "bybit": {}},
     "crypto_status": {"market_ok": False, "market_error": "", "market_at": "", "changes": {}, "balances": {}, "keys_ok": False,
                       "keys_error": ""},
     "favorites": [],
+    # Independent risk limits for broker demo and real money. "risk" itself is the practice profile.
+    # Filled with a copy of the practice limits on first start (migration risk_profiles_v1).
+    "risk_profiles": {"demo": {}, "live": {}},
     "news_feeds": [],
     "push": {},
     "ai_jobs": {"brief_enabled": False, "brief_time": "07:30", "timezone": "Asia/Riyadh", "coach_enabled": False,
@@ -168,6 +172,7 @@ RISK_INCREASING_UP = {
     "weekly_loss_pct",
     "max_concurrent_positions",
     "max_positions_per_symbol",
+    "max_same_currency_positions",
     "max_spread_points",
     "max_slippage_points",
     "order_ttl_seconds",
@@ -185,6 +190,7 @@ RISK_BOUNDS = {
     "weekly_loss_pct": (0.1, 20.0),
     "max_concurrent_positions": (1, 5),
     "max_positions_per_symbol": (1, 2),
+    "max_same_currency_positions": (1, 5),
     "max_spread_points": (1, 200),
     "max_slippage_points": (0, 100),
     "commission_per_lot": (0, 100),
@@ -229,3 +235,44 @@ def ensure_defaults(db: Session) -> None:
     for k, v in DEFAULTS.items():
         if db.get(Setting, k) is None:
             db.add(Setting(key=k, value=copy.deepcopy(v)))
+
+
+# ------------------------------------------------------------------ risk profiles
+RISK_PROFILES = ("practice", "demo", "live")
+PROFILE_OF_MODE = {"PAPER": "practice", "CRYPTO_PAPER": "practice", "MT5_DEMO": "demo", "CRYPTO_TEST": "demo",
+                   "MT5_LIVE": "live", "CRYPTO_LIVE": "live"}
+
+
+def tighter(a: dict, b: dict) -> dict:
+    """Per key, the more cautious of two risk policies (used to keep live never looser than demo)."""
+    out = dict(a)
+    for k, bv in b.items():
+        av = out.get(k)
+        if av is None or bv is None or isinstance(bv, bool) != isinstance(av, bool):
+            continue
+        if isinstance(bv, bool):
+            if k == "include_unrealized_in_limits":
+                out[k] = av or bv
+        elif k in RISK_INCREASING_UP or k == "reference_balance":
+            out[k] = min(av, bv)
+        elif k in RISK_INCREASING_DOWN:
+            out[k] = max(av, bv)
+    return out
+
+
+def risk_profile(db: Session, name: str) -> dict:
+    """Effective limits of one profile. Missing keys fall back to the practice profile; live is clamped to demo."""
+    practice = get(db, "risk")
+    if name == "practice":
+        return practice
+    profs = get(db, "risk_profiles")
+    demo = {**practice, **(profs.get("demo") or {})}
+    if name == "demo":
+        return demo
+    live = {**practice, **(profs.get("live") or {})}
+    return tighter(live, demo)
+
+
+def risk_for(db: Session, mode: str) -> dict:
+    """Risk limits that apply to an account environment / trading mode."""
+    return risk_profile(db, PROFILE_OF_MODE.get(mode, "practice"))

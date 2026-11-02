@@ -7,7 +7,8 @@ const DTONE = { "TRADE CANDIDATE": "good", WATCH: "warn", REJECT: "bad", "NO TRA
 const ICON = { pass: "✓", warn: "!", fail: "✕" };
 const digitsOf = (s, px) => (s.endsWith("JPY") ? 3 : px > 1000 ? 2 : px > 20 ? 3 : 5);
 const STRAT = { trend_pullback: "EMA trend pullback", smc_sweep_bos: "SMC sweep → BOS", donchian_breakout: "Donchian breakout",
-  rsi2_meanrev: "RSI-2 mean reversion", bb_squeeze: "Bollinger squeeze", ema_cross_adx: "EMA cross + ADX" };
+  rsi2_meanrev: "RSI-2 mean reversion", bb_squeeze: "Bollinger squeeze", ema_cross_adx: "EMA cross + ADX",
+  london_breakout: "London breakout", supertrend_ema: "Supertrend + EMA 200", ichimoku_tk: "Ichimoku TK cross" };
 
 function SignalCard({ x, onQueue, onExplain, canTrade, canAi, busy }) {
   const d = digitsOf(x.symbol, x.entry || 1);

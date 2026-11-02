@@ -219,3 +219,9 @@ def test_stock_market_sized_in_units(conn):
     # FX keeps standard lots
     fx = conn.markets["EURUSD"]
     assert fx.fx and next(x for x in conn.symbols_payload() if x["symbol"] == "EURUSD")["trade_contract_size"] == 100000
+
+
+def test_account_type_comes_from_the_session_server():
+    assert not cc.Capital(base="http://127.0.0.1:18799/api/v1").is_live_host()
+    assert cc.Capital(base=cc.BASE_LIVE.rstrip("/") + "/api/v1").is_live_host()
+    assert not cc.Capital(base="https://evil.example/api/v1").is_live_host()

@@ -245,14 +245,10 @@ def tick(db: Session) -> None:
         db.rollback()
         log.warning("news refresh failed: %s", e)
     research_jobs(db)
-    from .livegate import is_approved
-    if mode == "MT5_LIVE" and not is_approved(db):
-        tr2 = state.get_locked(db, "trading")
-        tr2["mode"] = "MT5_DEMO"
-        state.put(db, "trading", tr2)
-        event(db, "risk", "Live gate approval expired or revoked: mode switched to BROKER DEMO", "WARNING")
+    from . import livegate
+    if livegate.enforce(db):
         db.commit()
-        mode = "MT5_DEMO"
+        mode = state.get(db, "trading")["mode"]
     from .crypto import desk
     try:
         desk.tick(db)

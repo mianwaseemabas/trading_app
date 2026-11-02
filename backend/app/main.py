@@ -90,7 +90,28 @@ def _migrate(db, state) -> None:
                 if t not in cur:
                     cur.append(t)
         state.put(db, "alert_prefs", p)
-        state.put(db, "migrations", done + ["alert_types_v2"])
+        done = done + ["alert_types_v2"]
+        state.put(db, "migrations", done)
+    if "risk_profiles_v1" not in done:
+        # Demo and live get their own copy of today's limits, so later practice changes no longer move them.
+        practice = state.get(db, "risk")
+        profs = state.get(db, "risk_profiles")
+        for name in ("demo", "live"):
+            if not profs.get(name):
+                profs[name] = dict(practice)
+        state.put(db, "risk_profiles", profs)
+        done = done + ["risk_profiles_v1"]
+        state.put(db, "migrations", done)
+    if "pairs_v2" not in done:
+        # Widen the watched forex pairs (keeps any the owner added) and the liquid crypto list.
+        s = state.get(db, "strategy")
+        s["symbols"] = (s["symbols"] + [x for x in state.DEFAULTS["strategy"]["symbols"] if x not in s["symbols"]])[:20]
+        state.put(db, "strategy", s)
+        cc = state.get(db, "crypto")
+        cc["symbols"] = (cc.get("symbols", []) + [x for x in state.DEFAULTS["crypto"]["symbols"] if x not in cc.get("symbols", [])])[:20]
+        state.put(db, "crypto", cc)
+        done = done + ["pairs_v2"]
+        state.put(db, "migrations", done)
 
 
 def bootstrap() -> None:

@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -19,6 +20,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
+
+# Exact decimal storage for prices, volumes and money; Python keeps working with floats.
+Num = Numeric(asdecimal=False)
 
 
 def utcnow() -> datetime:
@@ -125,13 +129,13 @@ class Instrument(Base):
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     digits: Mapped[int] = mapped_column(Integer, default=5)
-    point: Mapped[float] = mapped_column(Float, default=0.00001)
-    contract_size: Mapped[float] = mapped_column(Float, default=100000)
-    tick_size: Mapped[float] = mapped_column(Float, default=0.00001)
-    tick_value: Mapped[float | None] = mapped_column(Float, nullable=True)  # account ccy per tick per 1 lot
-    volume_min: Mapped[float] = mapped_column(Float, default=0.01)
-    volume_max: Mapped[float] = mapped_column(Float, default=100)
-    volume_step: Mapped[float] = mapped_column(Float, default=0.01)
+    point: Mapped[float] = mapped_column(Num, default=0.00001)
+    contract_size: Mapped[float] = mapped_column(Num, default=100000)
+    tick_size: Mapped[float] = mapped_column(Num, default=0.00001)
+    tick_value: Mapped[float | None] = mapped_column(Num, nullable=True)  # account ccy per tick per 1 lot
+    volume_min: Mapped[float] = mapped_column(Num, default=0.01)
+    volume_max: Mapped[float] = mapped_column(Num, default=100)
+    volume_step: Mapped[float] = mapped_column(Num, default=0.01)
     currency_base: Mapped[str] = mapped_column(String(8), default="")
     currency_profit: Mapped[str] = mapped_column(String(8), default="")
     trade_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -146,10 +150,10 @@ class Candle(Base):
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     timeframe: Mapped[str] = mapped_column(String(8), primary_key=True)
     time: Mapped[datetime] = mapped_column(TS, primary_key=True)  # candle open time (UTC)
-    open: Mapped[float] = mapped_column(Float)
-    high: Mapped[float] = mapped_column(Float)
-    low: Mapped[float] = mapped_column(Float)
-    close: Mapped[float] = mapped_column(Float)
+    open: Mapped[float] = mapped_column(Num)
+    high: Mapped[float] = mapped_column(Num)
+    low: Mapped[float] = mapped_column(Num)
+    close: Mapped[float] = mapped_column(Num)
     tick_volume: Mapped[float] = mapped_column(Float, default=0)
     spread_points: Mapped[float] = mapped_column(Float, default=0)
     source: Mapped[str] = mapped_column(String(16), default="mt5")
@@ -160,8 +164,8 @@ class Quote(Base):
     __tablename__ = "quotes"
 
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
-    bid: Mapped[float] = mapped_column(Float)
-    ask: Mapped[float] = mapped_column(Float)
+    bid: Mapped[float] = mapped_column(Num)
+    ask: Mapped[float] = mapped_column(Num)
     time: Mapped[datetime] = mapped_column(TS)  # broker quote time
     source: Mapped[str] = mapped_column(String(16), default="mt5")
     collected_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
@@ -177,10 +181,10 @@ class AccountSnapshot(Base):
     server: Mapped[str] = mapped_column(String(64), default="")
     trade_mode: Mapped[str] = mapped_column(String(16), default="")  # demo | real | contest | paper
     currency: Mapped[str] = mapped_column(String(8), default="USD")
-    balance: Mapped[float] = mapped_column(Float, default=0)
-    equity: Mapped[float] = mapped_column(Float, default=0)
-    margin: Mapped[float] = mapped_column(Float, default=0)
-    free_margin: Mapped[float] = mapped_column(Float, default=0)
+    balance: Mapped[float] = mapped_column(Num, default=0)
+    equity: Mapped[float] = mapped_column(Num, default=0)
+    margin: Mapped[float] = mapped_column(Num, default=0)
+    free_margin: Mapped[float] = mapped_column(Num, default=0)
     leverage: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -199,9 +203,9 @@ class Signal(Base):
     strategy: Mapped[str] = mapped_column(String(64))
     strategy_version: Mapped[str] = mapped_column(String(32))
     action: Mapped[str] = mapped_column(String(8))  # BUY | SELL | NONE
-    entry_ref: Mapped[float | None] = mapped_column(Float, nullable=True)
-    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
-    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_ref: Mapped[float | None] = mapped_column(Num, nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Num, nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Num, nullable=True)
     features: Mapped[dict] = mapped_column(JSON, default=dict)
     reasons: Mapped[list] = mapped_column(JSON, default=list)
     # NO_TRADE | SIGNAL_ONLY | REJECTED | ORDERED
@@ -222,21 +226,21 @@ class Order(Base):
     position_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     symbol: Mapped[str] = mapped_column(String(32))
     side: Mapped[str] = mapped_column(String(4))  # BUY | SELL
-    volume: Mapped[float] = mapped_column(Float)
-    requested_price: Mapped[float] = mapped_column(Float)
-    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
-    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[float] = mapped_column(Num)
+    requested_price: Mapped[float] = mapped_column(Num)
+    stop_loss: Mapped[float | None] = mapped_column(Num, nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Num, nullable=True)
     max_slippage_points: Mapped[int] = mapped_column(Integer, default=20)
     # PENDING -> SENT -> FILLED | REJECTED | EXPIRED | CANCELLED
     status: Mapped[str] = mapped_column(String(16), default="PENDING", index=True)
     signature: Mapped[str] = mapped_column(String(128), default="")
     broker_ticket: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    filled_volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fill_price: Mapped[float | None] = mapped_column(Num, nullable=True)
+    filled_volume: Mapped[float | None] = mapped_column(Num, nullable=True)
     slippage_points: Mapped[float | None] = mapped_column(Float, nullable=True)
     sl_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[str] = mapped_column(Text, default="")
-    risk_amount: Mapped[float] = mapped_column(Float, default=0)
+    risk_amount: Mapped[float] = mapped_column(Num, default=0)
     created_at: Mapped[datetime] = mapped_column(TS, default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(TS, default=utcnow, onupdate=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
@@ -251,20 +255,20 @@ class Position(Base):
     broker_ticket: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(32))
     side: Mapped[str] = mapped_column(String(4))
-    volume: Mapped[float] = mapped_column(Float)
-    open_price: Mapped[float] = mapped_column(Float)
-    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
-    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[float] = mapped_column(Num)
+    open_price: Mapped[float] = mapped_column(Num)
+    stop_loss: Mapped[float | None] = mapped_column(Num, nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Num, nullable=True)
     opened_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     status: Mapped[str] = mapped_column(String(8), default="OPEN", index=True)  # OPEN | CLOSED
     closed_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
-    close_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close_price: Mapped[float | None] = mapped_column(Num, nullable=True)
     close_reason: Mapped[str] = mapped_column(String(32), default="")
-    commission: Mapped[float] = mapped_column(Float, default=0)
-    swap: Mapped[float] = mapped_column(Float, default=0)
-    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)  # net, after costs
-    unrealized_pnl: Mapped[float] = mapped_column(Float, default=0)
-    current_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    commission: Mapped[float] = mapped_column(Num, default=0)
+    swap: Mapped[float] = mapped_column(Num, default=0)
+    realized_pnl: Mapped[float | None] = mapped_column(Num, nullable=True)  # net, after costs
+    unrealized_pnl: Mapped[float] = mapped_column(Num, default=0)
+    current_price: Mapped[float | None] = mapped_column(Num, nullable=True)
 
 
 class BridgeNonce(Base):
@@ -320,11 +324,11 @@ class PendingOrder(Base):
     symbol: Mapped[str] = mapped_column(String(32))
     side: Mapped[str] = mapped_column(String(4))
     order_type: Mapped[str] = mapped_column(String(8))  # LIMIT | STOP
-    trigger_price: Mapped[float] = mapped_column(Float)
-    stop_loss: Mapped[float] = mapped_column(Float)
-    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trigger_price: Mapped[float] = mapped_column(Num)
+    stop_loss: Mapped[float] = mapped_column(Num)
+    take_profit: Mapped[float | None] = mapped_column(Num, nullable=True)
     sizing_mode: Mapped[str] = mapped_column(String(12), default="risk_pct")  # risk_pct | risk_amount | lots
-    sizing_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sizing_value: Mapped[float | None] = mapped_column(Num, nullable=True)
     management: Mapped[dict] = mapped_column(JSON, default=dict)
     note: Mapped[str] = mapped_column(String(200), default="")
     status: Mapped[str] = mapped_column(String(12), default="WORKING", index=True)  # WORKING|TRIGGERED|CANCELLED|EXPIRED|REJECTED
@@ -340,7 +344,7 @@ class PositionMgmt(Base):
     __tablename__ = "position_mgmt"
 
     position_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    initial_sl: Mapped[float] = mapped_column(Float)
+    initial_sl: Mapped[float] = mapped_column(Num)
     breakeven_r: Mapped[float | None] = mapped_column(Float, nullable=True)  # move SL to entry at +x R
     trailing_atr: Mapped[float | None] = mapped_column(Float, nullable=True)  # trail SL at x * ATR
     breakeven_done: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -388,9 +392,9 @@ class SmcEvent(Base):
     kind: Mapped[str] = mapped_column(String(16))
     dir: Mapped[str] = mapped_column(String(8))
     time: Mapped[datetime] = mapped_column(TS, index=True)
-    level: Mapped[float | None] = mapped_column(Float, nullable=True)
-    zone_low: Mapped[float | None] = mapped_column(Float, nullable=True)
-    zone_high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    level: Mapped[float | None] = mapped_column(Num, nullable=True)
+    zone_low: Mapped[float | None] = mapped_column(Num, nullable=True)
+    zone_high: Mapped[float | None] = mapped_column(Num, nullable=True)
     data: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
@@ -511,7 +515,7 @@ class SignalOutcome(Base):
     r_net: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_favorable_r: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_adverse_r: Mapped[float | None] = mapped_column(Float, nullable=True)
-    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Num, nullable=True)
     traded: Mapped[bool] = mapped_column(Boolean, default=False)
     checked_to: Mapped[datetime | None] = mapped_column(TS, nullable=True)
 
@@ -543,8 +547,8 @@ class Tick(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32))
     time: Mapped[datetime] = mapped_column(TS)
-    bid: Mapped[float] = mapped_column(Float)
-    ask: Mapped[float] = mapped_column(Float)
+    bid: Mapped[float] = mapped_column(Num)
+    ask: Mapped[float] = mapped_column(Num)
 
 
 class AcademyProgress(Base):
@@ -608,13 +612,13 @@ class RaceTrade(Base):
     timeframe: Mapped[str] = mapped_column(String(4))
     side: Mapped[str] = mapped_column(String(4))
     candle_time: Mapped[datetime] = mapped_column(TS)
-    entry: Mapped[float] = mapped_column(Float)
-    stop_loss: Mapped[float] = mapped_column(Float)
-    take_profit: Mapped[float] = mapped_column(Float)
+    entry: Mapped[float] = mapped_column(Num)
+    stop_loss: Mapped[float] = mapped_column(Num)
+    take_profit: Mapped[float] = mapped_column(Num)
     cost_r: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(8), default="OPEN", index=True)  # OPEN | WIN | LOSS | EXPIRED
     exit_time: Mapped[datetime | None] = mapped_column(TS, nullable=True)
-    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Num, nullable=True)
     r: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
