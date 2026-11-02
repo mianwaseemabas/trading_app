@@ -1,7 +1,7 @@
 FROM node:22-alpine AS build
 WORKDIR /src
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY build.mjs index.html ./
 COPY public ./public
 COPY src ./src
