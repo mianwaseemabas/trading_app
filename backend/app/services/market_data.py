@@ -275,6 +275,7 @@ def run_simulator(db: Session, symbols: list[str], timeframes: list[str], backfi
         if q is None:
             q = Quote(symbol=sym, bid=0, ask=0, time=now)
             db.add(q)
+            db.flush()  # sessions don't autoflush: a second call before commit would otherwise add a duplicate quote
         q.bid, q.ask = round(m - half, inst.digits), round(m + half, inst.digits)
         q.time, q.collected_at, q.source = now, now, "simulator"
         from .chart import record_tick
