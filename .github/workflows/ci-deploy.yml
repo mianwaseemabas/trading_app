@@ -5,13 +5,15 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * *"  # daily: catches time/weekday-dependent failures and broken pins (tests only, never deploys)
 
 permissions:
   contents: read
 
 jobs:
   backend-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -29,32 +31,32 @@ jobs:
       COOKIE_SECURE: "false"
       PYTHONPATH: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install -r backend/requirements-dev.txt
+      - run: pip install -r backend/requirements.lock -r backend/requirements-dev.txt
       - run: python -m pytest -q backend/tests
 
   connector-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install -r connectors/ctrader/requirements.txt -r connectors/capital/requirements.txt pytest
+      - run: pip install -r connectors/ctrader/requirements.lock -r connectors/capital/requirements.lock pytest
       - run: python -m pytest -q connectors/ctrader/tests
       - run: python -m pytest -q connectors/capital/tests
 
   frontend-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
@@ -63,8 +65,8 @@ jobs:
     # Auto-deploys to the VPS after tests pass on main, once these repository
     # secrets exist: VPS_HOST, VPS_USER, VPS_SSH_KEY (optional VPS_PORT).
     needs: [backend-tests, connector-tests, frontend-build]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
     env:
       HAS_KEY: ${{ secrets.VPS_SSH_KEY != '' && secrets.VPS_HOST != '' }}
     steps:

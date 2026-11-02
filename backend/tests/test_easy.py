@@ -67,7 +67,9 @@ def test_autopilot_start_stop_and_live_refusal(c, db):
     assert r["on"]
     db.expire_all()
     risk = state.get(db, "risk")
-    assert risk["max_trades_per_day"] == 10 and risk["risk_per_trade_pct"] == 0.25 and risk["max_concurrent_positions"] == 3
+    # Autopilot only ever lowers limits: defaults are 3 trades/day and 1 position, which stay; 0.5 % risk drops to 0.25 %
+    assert risk["max_trades_per_day"] == 3 and risk["risk_per_trade_pct"] == 0.25 and risk["max_concurrent_positions"] == 1
+    assert risk["daily_loss_pct"] == 1.0 and risk["weekly_loss_pct"] == 3.0
     assert flags_of(state.get(db, "controls"))["PAPER"] and not flags_of(state.get(db, "controls"))["MT5_LIVE"]
     assert state.get(db, "news_auto")["breakout"] and state.get(db, "ai_jobs")["brief_enabled"]
     assert "AUTO_TRADE" in state.get(db, "alert_prefs")["channels"]["push"]
@@ -76,6 +78,7 @@ def test_autopilot_start_stop_and_live_refusal(c, db):
     r = c.post("/api/autopilot/stop").json()
     db.expire_all()
     assert not r["on"] and not auto_ok(db, "PAPER") and not state.get(db, "news_auto")["breakout"]
+    assert state.get(db, "risk")["risk_per_trade_pct"] == 0.25  # stopping never raises risk again
     cc = state.get(db, "crypto")
     cc["mode"] = "LIVE"
     state.put(db, "crypto", cc)
@@ -85,3 +88,15 @@ def test_autopilot_start_stop_and_live_refusal(c, db):
     cc["mode"] = "OFF"
     state.put(db, "crypto", cc)
     db.commit()
+
+
+def test_autopilot_never_raises_limits(c, db):
+    risk = state.get(db, "risk")
+    risk.update(risk_per_trade_pct=0.1, max_trades_per_day=2, daily_loss_pct=0.5)
+    state.put(db, "risk", risk)
+    db.commit()
+    assert c.post("/api/autopilot/start").json()["on"]
+    db.expire_all()
+    after = state.get(db, "risk")
+    assert after["risk_per_trade_pct"] == 0.1 and after["max_trades_per_day"] == 2 and after["daily_loss_pct"] == 0.5
+    c.post("/api/autopilot/stop")

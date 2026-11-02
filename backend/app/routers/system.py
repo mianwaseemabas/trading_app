@@ -143,6 +143,11 @@ def pilot_preset(request: Request, user: User = Depends(require("risk.edit")), d
         new[k] = min(cur.get(k, v), v)
     changes = {k: {"from": cur.get(k), "to": new[k]} for k in target if new[k] != cur.get(k)}
     state.put(db, "risk", new, by=user.username)
+    profs = state.get_locked(db, "risk_profiles")
+    for pname in ("demo", "live"):  # the pilot preset only lowers limits, so it is applied to every profile
+        p = state.risk_profile(db, pname)
+        profs[pname] = {**p, **{k: min(p.get(k, v), v) for k, v in target.items()}}
+    state.put(db, "risk_profiles", profs, by=user.username)
     c = state.get_locked(db, "controls")
     c["require_approval"] = True
     c["auto_execute"] = {}
@@ -172,19 +177,40 @@ def unlock(body: UnlockIn, request: Request, user: User = Depends(require("tradi
 
 
 # ------------------------------------------------------------------ risk
+PROFILE_MODES = {"practice": "PRACTICE (PAPER, CRYPTO PAPER)", "demo": "BROKER DEMO, CRYPTO TESTNET", "live": "BROKER LIVE, CRYPTO LIVE"}
+
+
+def _profile(name: str | None) -> str:
+    name = (name or "practice").lower()
+    if name not in state.RISK_PROFILES:
+        raise HTTPException(400, "profile must be practice, demo or live")
+    return name
+
+
 @router.get("/risk")
-def get_risk(user: User = Depends(active_user), db: Session = Depends(get_db)):
-    return {"risk": state.get(db, "risk"), "bounds": state.RISK_BOUNDS, "locked_keys": sorted(state.RISK_LOCKED_KEYS)}
+def get_risk(profile: str | None = None, user: User = Depends(active_user), db: Session = Depends(get_db)):
+    name = _profile(profile)
+    tr = state.get(db, "trading")
+    return {"risk": state.risk_profile(db, name), "profile": name, "profiles": PROFILE_MODES,
+            "active_profile": state.PROFILE_OF_MODE.get(tr["mode"], "practice"),
+            "demo": state.risk_profile(db, "demo") if name == "live" else None,
+            "bounds": state.RISK_BOUNDS, "locked_keys": sorted(state.RISK_LOCKED_KEYS)}
 
 
 class RiskIn(BaseModel):
     values: dict
     password: str | None = None
+    profile: str | None = None
 
 
 @router.put("/risk")
 def put_risk(body: RiskIn, request: Request, user: User = Depends(require("risk.edit")), db: Session = Depends(get_db)):
-    cur = state.get_locked(db, "risk")
+    name = _profile(body.profile)
+    if name == "practice":
+        cur = state.get_locked(db, "risk")
+    else:
+        state.get_locked(db, "risk_profiles")
+        cur = state.risk_profile(db, name)
     new = dict(cur)
     increases = []
     for k, v in body.values.items():
@@ -214,15 +240,25 @@ def put_risk(body: RiskIn, request: Request, user: User = Depends(require("risk.
         new[k] = v
     if new["weekly_loss_pct"] < new["daily_loss_pct"]:
         raise HTTPException(400, "Weekly loss limit must be >= daily loss limit")
+    if name == "live":
+        demo = state.risk_profile(db, "demo")
+        looser = [k for k in new if state.tighter(new, demo).get(k) != new[k]]
+        if looser:
+            raise HTTPException(400, "Live limits cannot be looser than demo — raise the demo profile first: " + ", ".join(sorted(looser)))
     if increases:
         _confirm_password(user, body.password)
     changes = {k: {"from": cur[k], "to": new[k]} for k in new if new[k] != cur.get(k)}
-    state.put(db, "risk", new, by=user.username)
-    audit(db, "risk.updated", user=user, ip=client_ip(request), details={"changes": changes, "risk_increase": increases})
+    if name == "practice":
+        state.put(db, "risk", new, by=user.username)
+    else:
+        profs = state.get_locked(db, "risk_profiles")
+        profs[name] = new
+        state.put(db, "risk_profiles", profs, by=user.username)
+    audit(db, "risk.updated", user=user, ip=client_ip(request), details={"profile": name, "changes": changes, "risk_increase": increases})
     if increases:
-        notify(f"⚠️ Risk settings increased by {user.username}: {', '.join(increases)}")
+        notify(f"⚠️ Risk settings ({name}) increased by {user.username}: {', '.join(increases)}")
     db.commit()
-    return {"risk": new, "risk_increase_confirmed": increases}
+    return {"risk": state.risk_profile(db, name), "profile": name, "risk_increase_confirmed": increases}
 
 
 # -------------------------------------------------------------- strategy

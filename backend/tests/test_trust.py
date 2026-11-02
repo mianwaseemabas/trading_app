@@ -140,6 +140,9 @@ def test_assessment_score_gates_economics(c, db, monkeypatch):
 
 def test_shadow_outcomes_and_strategy_compare(c, db):
     s = make_signal(db)
+    # put the signal a few hours back so the "future" candles are already in the past on weekdays too
+    s.candle_time = utcnow().replace(minute=0, second=0, microsecond=0) - timedelta(hours=6)
+    db.commit()
     start = s.candle_time + timedelta(hours=1)
     # synthetic future candles: the target is hit on the 2nd candle
     rows = [{"time": start, "open": s.entry_ref, "high": s.entry_ref + 0.0005, "low": s.entry_ref - 0.0004, "close": s.entry_ref + 0.0003},

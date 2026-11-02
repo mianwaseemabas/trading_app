@@ -245,7 +245,7 @@ def risk_status(user: User = Depends(require("dashboard.view")), db: Session = D
     acct, _ = trading.account_state(db, mode)
     info = trading.check_loss_limits(db, mode) if mode in trading.ORDER_MODES else None
     db.rollback()
-    risk = state.get(db, "risk")
+    risk = state.risk_for(db, mode)
     day0 = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     trades_today = db.scalar(select(func.count()).select_from(Order).where(Order.mode == mode, Order.action == "OPEN",
                                                                           Order.status == "FILLED", Order.created_at >= day0)) or 0
@@ -326,7 +326,7 @@ def get_automation(user: User = Depends(require("dashboard.view")), db: Session 
             "min_score": c.get("auto_min_score", 70), "min_verdict": c.get("auto_min_verdict", "PAPER_TEST"),
             "live_gate_approved": is_approved(db),
             "note": "Auto-trade places qualified setups without asking. Every order still passes the risk engine. "
-                    "Real-money modes also need an approved, unexpired live gate."}
+                    "Real-money modes also need an approved, unexpired live gate and the RESEARCH_SUPPORTED verdict."}
 
 
 class AutoIn(BaseModel):

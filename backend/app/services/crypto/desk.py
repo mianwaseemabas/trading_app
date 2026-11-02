@@ -155,7 +155,7 @@ def build_context(db: Session, symbol: str, side: str, sl: float | None, tp: flo
                   duplicate: bool = False) -> RiskContext:
     from .. import trading
     c = cfg(db)
-    risk = dict(state.get(db, "risk"))
+    risk = dict(state.risk_for(db, mode))
     tr = state.get(db, "trading")
     controls = state.get(db, "controls")
     q = db.get(Quote, symbol)

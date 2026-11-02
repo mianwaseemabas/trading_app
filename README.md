@@ -67,6 +67,18 @@ MT5 terminal (Windows) ──HTTPS + HMAC──►  nginx ─► FastAPI ─► 
 - Reconciliation with broker positions; any unexplained difference blocks new trades.
 - Live gate: 5-item checklist + approval with password; the bridge additionally refuses real accounts unless `ALLOW_REAL_ACCOUNT=true`.
 
+**Risk profiles.** Limits are kept separately for *practice* (PAPER, crypto paper), *broker demo* (MT5_DEMO, crypto
+testnet) and *real money* (MT5_LIVE, crypto live) — Risk & Strategy → Risk policy tabs. Real-money limits can never be
+looser than demo (rejected on save and clamped on read). Autopilot and practice changes never touch the real-money profile.
+
+**Correlated pairs.** `max_same_currency_positions` (default 2) limits open positions leaning the same way on one
+currency, e.g. long EURUSD + long GBPUSD + long AUDUSD would be three USD shorts.
+
+**Real-money auto-trade** needs: an approved, unexpired live gate; the RESEARCH_SUPPORTED verdict; and the per-mode
+switch turned on with your password. When the gate expires or is revoked, the engine leaves BROKER LIVE / CRYPTO LIVE
+and switches real-money auto-trade off — re-enabling needs the password again. Live-gate trade evidence counts only
+broker-demo / testnet trades (practice fills are too optimistic).
+
 Trading modes: `OFF` → `SIGNALS_ONLY` → `PAPER` → `MT5_DEMO` (shown as *Broker demo*) → `MT5_LIVE` (*Broker live*).
 The broker modes work with any connector (Capital.com, cTrader or MT5); run one at a time.
 
@@ -118,6 +130,26 @@ and variables → Actions. From then on every push to `main` runs the tests and,
 - **Backtest:** Backtest page. Uses the same strategy and risk code as live, next-bar entries, spread,
   slippage, commission and swap, in-sample/out-of-sample split and segment stability, with honest
   robustness warnings. You can also import MT5 "Export Bars" CSV files for longer history.
+
+## Markets and strategies
+
+Default forex watch-list: EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF, NZDUSD, EURJPY, GBPJPY, EURGBP (existing installs
+get the missing ones added once; edit on Risk & Strategy, max 20). Crypto: BTC, ETH, SOL, XRP, BNB (USDT). Gold/indices
+work too, but broker names differ (Capital.com uses `GOLD`, not `XAUUSD` — set `SYMBOL_MAP` in the connector if needed).
+
+Strategies (all closed-candle, no look-ahead, tested in CI): EMA trend pullback (baseline), SMC sweep → BOS → retest,
+Donchian breakout, RSI-2 mean reversion, Bollinger squeeze, EMA 9/21 + ADX, **London breakout** (Asian range, 07–10 UTC),
+**Supertrend + EMA 200**, **Ichimoku TK cross**. None is a proven edge: compare them in the Strategy lab on your
+broker's data, with costs and the untouched final-test period, before trusting any of them.
+
+## Dependencies and database migrations
+
+- Exact versions are pinned in `backend/requirements.lock`, `connectors/*/requirements.lock` and
+  `frontend/package-lock.json`; Docker images and CI install only those. To upgrade: change `requirements.txt` /
+  `package.json`, regenerate the lock (`pip freeze` in a python:3.12 venv / `npm install --package-lock-only`), commit.
+- Schema changes to existing tables are Alembic migrations in `backend/app/migrations/versions/`, applied automatically
+  at startup under a database lock (after the pre-deploy backup). Prices, volumes and money are `NUMERIC`.
+- CI also runs daily (tests only, never deploys) to catch weekday/time-dependent failures.
 
 ## Local development
 

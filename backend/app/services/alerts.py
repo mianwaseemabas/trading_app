@@ -25,7 +25,7 @@ log = logging.getLogger("alerts")
 
 TYPES = {
     "SIGNAL_QUALIFIED": "Trade opportunity: a setup passed the score and all hard checks (with timeframe and validity)",
-    "AUTO_TRADE": "A trade was placed automatically (auto-trade on)", "MARKET_NEWS": "High-impact market headline for your markets", "SIGNAL_REJECTED": "A setup was rejected (with reasons)",
+    "AUTO_TRADE": "A trade was placed automatically (auto-trade on)", "LIVE_GATE_EXPIRED": "Live approval expired or was revoked: real-money modes and real-money auto-trade were switched off", "MARKET_NEWS": "High-impact market headline for your markets", "SIGNAL_REJECTED": "A setup was rejected (with reasons)",
     "SIGNAL_EXPIRED": "A setup expired without a decision", "APPROVAL_REQUIRED": "A setup waits for your approval",
     "APPROVAL_EXPIRING": "A setup expires in 10 minutes", "ENTRY_TRIGGERED": "A pending limit/stop order triggered",
     "ORDER_FILLED": "Order filled", "ORDER_REJECTED": "Order rejected", "STOP_HIT": "Stop-loss hit",

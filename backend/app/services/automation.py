@@ -4,6 +4,7 @@ without asking the owner first.
 * Practice / demo / testnet: the owner's switch decides.
 * Real money (BROKER LIVE, CRYPTO LIVE): only when the live gate is approved AND not expired AND the
   owner switched auto-trading on for that mode with their password. Otherwise every setup waits for approval.
+* Real-money auto-trades additionally need the RESEARCH_SUPPORTED verdict (enough out-of-sample evidence).
 * Only setups whose verdict is at least `auto_min_verdict` and score ≥ `auto_min_score` are auto-placed;
   the risk engine still checks every order (size, loss limits, kill switch, data).
 """
@@ -16,6 +17,7 @@ from .. import state
 MODES = ["PAPER", "MT5_DEMO", "MT5_LIVE", "CRYPTO_PAPER", "CRYPTO_TEST", "CRYPTO_LIVE"]
 LIVE = {"MT5_LIVE", "CRYPTO_LIVE"}
 VERDICT_RANK = {"NO_TRADE": 0, "WATCH": 1, "PAPER_TEST": 2, "RESEARCH_SUPPORTED": 3}
+LIVE_MIN_VERDICT = "RESEARCH_SUPPORTED"  # floor for real-money auto-trades, whatever auto_min_verdict says
 
 
 def flags_of(c: dict) -> dict:
@@ -36,7 +38,10 @@ def auto_ok(db: Session, mode: str, assessment=None) -> bool:
         if not is_approved(db):
             return False
     if assessment is not None:
-        if VERDICT_RANK.get(assessment.verdict, 0) < VERDICT_RANK.get(c.get("auto_min_verdict", "PAPER_TEST"), 2):
+        min_rank = VERDICT_RANK.get(c.get("auto_min_verdict", "PAPER_TEST"), 2)
+        if mode in LIVE:  # PAPER_TEST means "profitability not validated" — never enough for real money
+            min_rank = max(min_rank, VERDICT_RANK[LIVE_MIN_VERDICT])
+        if VERDICT_RANK.get(assessment.verdict, 0) < min_rank:
             return False
         if assessment.score < int(c.get("auto_min_score", 70)):
             return False

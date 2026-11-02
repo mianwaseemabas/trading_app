@@ -168,7 +168,7 @@ def check_loss_limits(db: Session, mode: str) -> dict | None:
     acct, _ = account_state(db, mode)
     if acct is None:
         return None
-    risk = state.get(db, "risk")
+    risk = state.risk_for(db, mode)
     anchor = update_anchors(db, mode, acct)
     day_loss, week_loss = losses(acct, anchor, risk["include_unrealized_in_limits"])
     day_lim = anchor["day_equity"] * risk["daily_loss_pct"] / 100
@@ -209,7 +209,7 @@ def data_freshness(db: Session, symbol: str, tf: str, data_cfg: dict, mode: str)
 
 def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | None, tp: float | None,
                   mode: str, duplicate: bool = False) -> RiskContext | None:
-    cfg = state.get(db, "risk")
+    cfg = state.risk_for(db, mode)
     tr = state.get(db, "trading")
     data_cfg = state.get(db, "data")
     inst = md.ensure_instrument(db, symbol)
@@ -283,7 +283,7 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
 
 # ------------------------------------------------------------------- orders
 def place_order(db: Session, sig: Signal, decision: RiskDecision, mode: str) -> Order:
-    cfg = state.get(db, "risk")
+    cfg = state.risk_for(db, mode)
     o = Order(
         client_id=f"S{sig.id}-{mode}",
         signal_id=sig.id,
@@ -412,7 +412,7 @@ def request_close(db: Session, p: Position, reason: str, by: str) -> Order | Non
         requested_price=p.current_price or p.open_price,
         stop_loss=None,
         take_profit=None,
-        max_slippage_points=int(state.get(db, "risk")["max_slippage_points"]) * 3,
+        max_slippage_points=int(state.risk_for(db, p.mode)["max_slippage_points"]) * 3,
         expires_at=utcnow() + timedelta(minutes=5),
     )
     db.add(o)

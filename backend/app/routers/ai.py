@@ -59,7 +59,7 @@ def _context(db: Session) -> str:
     tr = state.get(db, "trading")
     mode = tr["mode"] if tr["mode"] in trading.ORDER_MODES else "PAPER"
     acct, meta = trading.account_state(db, mode)
-    risk = state.get(db, "risk")
+    risk = state.risk_for(db, mode)
     strat = state.get(db, "strategy")
     positions = trading.open_positions(db, mode)
     sigs = db.scalars(select(Signal).where(Signal.action != "NONE").order_by(Signal.id.desc()).limit(8)).all()

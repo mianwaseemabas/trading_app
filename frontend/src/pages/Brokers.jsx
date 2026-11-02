@@ -225,6 +225,8 @@ const CRYPTO_STRATS = {
   rsi2_meanrev: "RSI-2 pullback (mean reversion, win ~55–70%, small winners)",
   bb_squeeze: "Bollinger squeeze breakout",
   ema_cross_adx: "EMA 9/21 cross + ADX (momentum)",
+  supertrend_ema: "Supertrend + EMA 200 (trend)",
+  ichimoku_tk: "Ichimoku TK cross (trend)",
   trend_pullback: "EMA trend pullback (baseline)",
   smc_sweep_bos: "SMC sweep → BOS → retest",
 };
