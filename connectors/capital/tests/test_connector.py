@@ -225,3 +225,16 @@ def test_account_type_comes_from_the_session_server():
     assert not cc.Capital(base="http://127.0.0.1:18799/api/v1").is_live_host()
     assert cc.Capital(base=cc.BASE_LIVE.rstrip("/") + "/api/v1").is_live_host()
     assert not cc.Capital(base="https://evil.example/api/v1").is_live_host()
+
+
+def test_backfill_one_market_per_cycle_so_quotes_keep_flowing(conn, monkeypatch):
+    posted = []
+    monkeypatch.setattr(cc, "app", lambda method, path, payload=None: posted.append(payload) or {"stored": 1})
+    monkeypatch.setattr(cc, "BACKFILL_BARS", 50)
+    conn.last_bar.clear()
+    conn.__dict__.pop("backfill_tried", None)
+    conn.timeframes = ["H1", "M15"]
+    conn.push_candles()
+    assert len(conn.last_bar) == 1  # only one long history download in this cycle
+    conn.push_candles()
+    assert len(conn.last_bar) == 2

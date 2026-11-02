@@ -50,7 +50,7 @@ function ControlBar({ f, symbols, reload }) {
       <div className="controls-grid">
         <Switch on={c.auto_trading} disabled={!editable || busy} label="Strategy trading" hint="When off, the strategy only shows signals — it never opens trades by itself"
           onChange={(v) => put({ auto_trading: v }, v ? "Strategy trading ON" : "Strategy trading OFF — signals only")} />
-        <div className="small"><b>Trade without asking me?</b><div className="tiny muted">Set per account (practice, demo, crypto, live) in <a href="#/lab">Strategy lab → Auto-trade</a>.</div></div>
+        <div className="small"><b>Trade without asking me?</b><div className="tiny muted">Set per account (practice, demo, crypto, live) on the <a href="#/auto">Auto-trade</a> page.</div></div>
         <Switch on={c.manual_trading} disabled={!editable || busy} label="Manual trading (my orders)" hint="When off, nobody can place manual orders"
           onChange={(v) => put({ manual_trading: v }, v ? "Manual trading ON" : "Manual trading OFF")} />
         <Switch on={c.news_filter} disabled={!editable || busy} label={`News filter (${c.news_before_min}m before / ${c.news_after_min}m after)`}
@@ -401,6 +401,7 @@ export default function Live() {
           <span className="muted small">live · updates every 3 s</span>
         </div>
         <div className="row gap">
+          <a className="btn sm" href="#/auto">🤖 Auto-trade</a>
           <button className="btn ghost sm" onClick={() => setHelp(!help)}>{help ? "Hide" : "How do I place a trade?"}</button>
           {can("trading.manual") && (
             <button className="btn primary" disabled={!canTrade} title={canTrade ? "" : "Set mode to PRACTICE or BROKER DEMO, switch manual trading on, release the kill switch"} onClick={() => setTicket(true)}>+ New order</button>

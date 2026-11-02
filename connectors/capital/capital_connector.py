@@ -354,9 +354,19 @@ class Connector:
                 log.info("%s history window reduced to %s bars per request", tf, bars)
 
     def push_candles(self):
+        """Latest bars for every market; the long first-time history download (BACKFILL_BARS) for at most ONE
+        market/timeframe per cycle, so quotes, heartbeat and orders keep flowing after a restart or a new pair."""
         now = time.time()
+        backfilled = False
         for m in list(self.markets.values()):
             for tf in self.timeframes:
+                key = (m.app_name, tf)
+                if key not in self.last_bar:
+                    tried = self.__dict__.setdefault("backfill_tried", {})
+                    if backfilled or now - tried.get(key, 0) < 300:  # one per cycle; a failed/empty one waits 5 min
+                        continue
+                    backfilled = True
+                    tried[key] = now
                 try:
                     self._push_candles_one(m, tf, now)
                 except Exception as e:  # never let history problems block trading/reconciliation
