@@ -18,7 +18,7 @@ jobs:
             { echo "# Pinned by CI from $d/requirements.txt (python 3.12). Regenerate after changing requirements.txt."; pip freeze --all | grep -v -E '^(pip|setuptools|wheel)=='; } > out/$(echo $d | tr / _).lock
             deactivate; rm -rf /tmp/v-$$
           done
-          ls -la out
+          for f in out/*; do echo "=====FILE $f"; cat $f; echo "=====END"; done
       - uses: actions/upload-artifact@v4
         with: {name: pylocks, path: out}
   node:
@@ -26,6 +26,6 @@ jobs:
     container: node:22-alpine
     steps:
       - uses: actions/checkout@v4
-      - run: cd frontend && npm install --package-lock-only --no-audit --no-fund && mkdir -p /tmp/o && cp package-lock.json /tmp/o/
+      - run: cd frontend && npm install --package-lock-only --no-audit --no-fund && mkdir -p /tmp/o && cp package-lock.json /tmp/o/ && echo '=====FILE out/package-lock.json' && cat package-lock.json && echo '=====END'
       - uses: actions/upload-artifact@v4
         with: {name: npmlock, path: /tmp/o}
