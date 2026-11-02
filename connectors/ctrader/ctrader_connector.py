@@ -493,13 +493,21 @@ class Connector:
         return out
 
     async def push_candles(self):
+        # The long first-time history download runs for at most ONE symbol/timeframe per cycle,
+        # so quotes, heartbeat and orders keep flowing after a restart or when pairs are added.
         now_ms = int(time.time() * 1000)
+        backfilled = False
         for s in self.st.symbols.values():
             for tf in self.timeframes:
                 key = (s.app_name, tf)
                 step = TF_SECONDS[tf] * 1000
                 bars: list[dict] = []
                 if key not in self.st.last_bar:
+                    tried = self.__dict__.setdefault("backfill_tried", {})
+                    if backfilled or now_ms - tried.get(key, 0) < 300_000:  # one per cycle; a failed/empty one waits 5 min
+                        continue
+                    backfilled = True
+                    tried[key] = now_ms
                     window = TF_WINDOW_DAYS[tf] * 86400 * 1000
                     to = now_ms
                     while len(bars) < BACKFILL_BARS:

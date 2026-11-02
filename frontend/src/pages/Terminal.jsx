@@ -236,7 +236,7 @@ function OrderPanel({ symbol, t, quote, onPlaced }) {
       {t?.route && (
         <div className={`route-banner r-${t.route.kind}`}>
           <div>Orders go to: <b>{t.route.label}</b></div>
-          <div className="tiny">Auto-trade on this account: <b>{t.route.auto ? "ON ⚡ — qualified setups are placed by the app" : "OFF — setups wait for your approval"}</b> · <a href="#/lab">change</a></div>
+          <div className="tiny">Auto-trade on this account: <b>{t.route.auto ? "ON ⚡ — qualified setups are placed by the app" : "OFF — setups wait for your approval"}</b> · <a href="#/auto">change</a></div>
         </div>
       )}
       <div className="bs">

@@ -16,6 +16,7 @@ function Autopilot({ on, reload }) {
       {on
         ? <button className="btn" disabled={busy} onClick={() => { if (window.confirm("Stop autopilot? Auto-trade turns off everywhere; new setups will wait for your approval. Open trades keep their stops.")) run(() => api.post("/autopilot/stop"), "Autopilot stopped").then(reload); }}>■ Stop autopilot</button>
         : <button className="btn primary" onClick={() => setOpen(true)}>▶ Start autopilot (practice)</button>}
+      <a className="btn" href="#/auto">⚙ Auto-trade settings</a>
       {open && (
         <Modal title="Start autopilot — practice money only" onClose={() => setOpen(false)}>
           {!plan ? <p className="muted">Preparing…</p> : plan.blocked ? <div className="alert bad">{plan.blocked}</div> : <>

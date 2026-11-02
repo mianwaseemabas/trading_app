@@ -22,6 +22,7 @@ import Smc from "./pages/Smc.jsx";
 import Terminal from "./pages/Terminal.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import StrategyLab from "./pages/StrategyLab.jsx";
+import AutoTrade from "./pages/AutoTrade.jsx";
 import Academy from "./pages/Academy.jsx";
 import Charts from "./pages/Charts.jsx";
 import Tour from "./components/Tour.jsx";
@@ -40,6 +41,7 @@ const ROUTES = [
   { k: "charts", label: "Multi-chart", icon: "▦", perm: "market.view", el: Charts, sec: "Trade" },
   { k: "dashboard", label: "Dashboard", icon: "◧", perm: "dashboard.view", el: Dashboard, sec: "Trade" },
   { k: "live", label: "Live trading", icon: "●", perm: "trades.view", el: Live, sec: "Trade" },
+  { k: "auto", label: "Auto-trade", icon: "🤖", perm: "dashboard.view", el: AutoTrade, sec: "Trade", easy: true },
   { k: "setups", label: "Setups to approve", icon: "✓", perm: "signals.view", el: Setups, sec: "Trade" },
   { k: "alerts", label: "Alerts", icon: "🔔", perm: "dashboard.view", el: Alerts, sec: "Trade", tab: true, easy: true },
   { k: "academy", label: "Academy (learn)", icon: "🎓", perm: "dashboard.view", el: Academy, sec: "Learn", tab: true, easy: true },
@@ -50,7 +52,7 @@ const ROUTES = [
   { k: "smc", label: "SMC scanner", icon: "⌖", perm: "market.view", el: Smc, sec: "Research" },
   { k: "market", label: "Market", icon: "◫", perm: "market.view", el: Market, sec: "Research" },
   { k: "signals", label: "Signals", icon: "◇", perm: "signals.view", el: Signals, sec: "Research" },
-  { k: "lab", label: "Strategy lab & auto-trade", icon: "⚗", perm: "backtest.run", el: StrategyLab, sec: "Strategy" },
+  { k: "lab", label: "Strategy lab", icon: "⚗", perm: "backtest.run", el: StrategyLab, sec: "Strategy" },
   { k: "backtest", label: "Backtest", icon: "↺", perm: "backtest.run", el: Backtest, sec: "Strategy" },
   { k: "risk", label: "Risk & Strategy", icon: "⛨", perm: "dashboard.view", el: RiskStrategy, sec: "Strategy" },
   { k: "trades", label: "Trades", icon: "⇅", perm: "trades.view", el: Trades, sec: "Strategy" },
