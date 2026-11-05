@@ -28,6 +28,7 @@ from ..models import AccountSnapshot, BridgeNonce, Instrument, Order, Position, 
 from ..services import livegate
 from ..services import market_data as md
 from ..services.notifier import notify
+from ..services.trading import track_external
 from ..secretbox import decrypt, encrypt
 from ..services.trading import order_payload
 import ipaddress
@@ -324,8 +325,8 @@ async def positions(request: Request, auth=Depends(bridge_auth), db: Session = D
     Reconciles local records with the broker; any unexplained difference blocks new trades.
     """
     body = await request.json()
-    state.put(db, "external_positions", {"connector": auth["connector"], "at": utcnow().isoformat(),
-                                         "positions": (body.get("external") or [])[:100]})
+    state.put(db, "external_positions", track_external(state.get(db, "external_positions"), auth["connector"],
+                                                       (body.get("external") or [])[:100]))
     acc_mode = state.get(db, "trading")["mode"]
     mode = acc_mode if acc_mode in ("MT5_DEMO", "MT5_LIVE") else body.get("mode_hint", "MT5_DEMO")
     broker = {str(p["ticket"]): p for p in body.get("positions", [])}

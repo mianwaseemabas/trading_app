@@ -137,12 +137,69 @@ def _period_keys():
     return now.date().isoformat(), f"{iso[0]}-W{iso[1]:02d}"
 
 
+def _num(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def external_pnl(db: Session, mode: str) -> tuple[float, float]:
+    """(open P&L, closed P&L to date) of broker positions opened outside the app.
+
+    The app does not manage these and they must not count towards its loss limits.
+    """
+    if mode not in MT5_MODES:
+        return 0.0, 0.0
+    ext = state.get(db, "external_positions")
+    return sum(_num(p.get("pnl")) for p in ext.get("positions", [])), _num(ext.get("closed_pnl_total"))
+
+
+def track_external(prev: dict, connector: str, positions: list[dict]) -> dict:
+    """New external-positions record. When an outside position disappears, its last P&L is added to
+    closed_pnl_total (it has moved into the balance). If it shows up again (a missed snapshot), it is
+    taken back out, so nothing is counted twice."""
+    same = prev.get("connector") == connector
+    total = _num(prev.get("closed_pnl_total")) if same else 0.0
+    gone = dict(prev.get("closed_tickets") or {}) if same else {}
+    now_ids = {str(p.get("ticket")) for p in positions}
+    for t in list(gone):
+        if t in now_ids:
+            total -= _num(gone.pop(t))
+    if same:
+        for p in prev.get("positions", []):
+            t = str(p.get("ticket"))
+            if t not in now_ids:
+                gone[t] = _num(p.get("pnl"))
+                total += gone[t]
+    gone = dict(list(gone.items())[-200:])
+    return {"connector": connector, "at": utcnow().isoformat(), "positions": positions,
+            "closed_pnl_total": round(total, 2), "closed_tickets": gone}
+
+
+def limits_account(db: Session, mode: str, acct: AccountState) -> AccountState:
+    """Account state with outside positions removed, used only for daily/weekly loss limits.
+
+    Sizing and margin checks keep using the real account (that is the conservative side).
+    """
+    unreal, closed = external_pnl(db, mode)
+    if not unreal and not closed:
+        return acct
+    return AccountState(acct.equity - unreal - closed, acct.balance - closed, acct.free_margin, acct.currency, acct.leverage)
+
+
 def update_anchors(db: Session, mode: str, acct: AccountState) -> dict:
-    """Maintain start-of-day / start-of-week equity anchors (UTC) per mode."""
+    """Maintain start-of-day / start-of-week equity anchors (UTC) per mode.
+
+    Broker anchors are kept on the limits basis (outside positions removed). Anchors saved before
+    that basis existed are reset once, otherwise outside losses taken at day start would linger.
+    """
     anchors = state.get(db, "anchors")
     day, week = _period_keys()
     a = anchors.get(mode, {})
     changed = False
+    if mode in MT5_MODES and a.get("basis") != "app":
+        a = {"basis": "app"}
     if a.get("day") != day:
         a.update(day=day, day_equity=acct.equity, day_balance=acct.balance)
         changed = True
@@ -169,6 +226,7 @@ def check_loss_limits(db: Session, mode: str) -> dict | None:
     if acct is None:
         return None
     risk = state.risk_for(db, mode)
+    acct = limits_account(db, mode, acct)
     anchor = update_anchors(db, mode, acct)
     day_loss, week_loss = losses(acct, anchor, risk["include_unrealized_in_limits"])
     day_lim = anchor["day_equity"] * risk["daily_loss_pct"] / 100
@@ -218,8 +276,9 @@ def build_context(db: Session, *, symbol: str, side: str, tf: str, sl: float | N
     acct, meta = account_state(db, mode)
     if acct is None:
         acct = AccountState(0, 0, 0)
-    anchor = update_anchors(db, mode, acct)
-    day_loss, week_loss = losses(acct, anchor, cfg["include_unrealized_in_limits"])
+    lim_acct = limits_account(db, mode, acct)
+    anchor = update_anchors(db, mode, lim_acct)
+    day_loss, week_loss = losses(lim_acct, anchor, cfg["include_unrealized_in_limits"])
     data_ok, data_detail = data_freshness(db, symbol, tf, data_cfg, mode)
     if data_cfg["source"] == "simulator" and mode in MT5_MODES:
         data_ok, data_detail = False, "simulator data cannot be used for MT5 orders"
