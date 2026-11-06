@@ -142,6 +142,21 @@ Donchian breakout, RSI-2 mean reversion, Bollinger squeeze, EMA 9/21 + ADX, **Lo
 **Supertrend + EMA 200**, **Ichimoku TK cross**. None is a proven edge: compare them in the Strategy lab on your
 broker's data, with costs and the untouched final-test period, before trusting any of them.
 
+## Extra filters before a trade (Strategy lab → "AI desk & Time Machine")
+
+Ideas taken from open-source trading projects and rebuilt inside the app, so they run on your broker's candles and
+through the same risk engine. **They can only block or shrink a trade — never place or enlarge one.** Making one less
+strict needs your password.
+
+| Feature | Idea from | What it does |
+|---|---|---|
+| **Time Machine** | day-trader-skill | For every setup: how often the same strategy's past setups on this market hit the target before the stop (one trade at a time, stop first if both hit in one candle, costs in R), versus the break-even win rate and 10,000 random-entry simulations scaled to today's ATR. Optional hard gate: block setups whose 95% range is entirely below break-even. Shown in the setup review. |
+| **AI bull/bear review** | TradingAgents | A bull analyst and a bear analyst argue from the app's data, then a risk manager rates the market BUY / OVERWEIGHT / HOLD / UNDERWEIGHT / SELL with a confidence. **Log only** (start here) records reviews in the background and never touches a trade; "Is the AI helping?" compares them with what actually happened. **Veto** reviews before every auto trade: against → manual approval; neutral → half size (or your choice); AI error, timeout or daily budget used up → manual approval (fails closed). Price and risk are re-checked after the AI answers. |
+| **Compare vs hold** | Vibe-Trading / Freqtrade | Backtest up to 6 strategies on one market with the same costs and compare each with buying at the start and holding (return, max drawdown, return per drawdown). The lab ranking gets a "vs hold" column too. |
+
+An AI review cannot be backtested honestly (the model has seen the history), so judge it only on forward results in
+Log-only mode — weeks, 30+ resolved setups — before letting it veto real-money trades.
+
 ## Dependencies and database migrations
 
 - Exact versions are pinned in `backend/requirements.lock`, `connectors/*/requirements.lock` and

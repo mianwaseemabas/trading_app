@@ -463,7 +463,15 @@ def _evaluate_one(db: Session, sym: str, tf: str, scfg: dict, mode: str | None) 
         return
     controls = state.get(db, "controls")
     from ..automation import announce, auto_ok
+    ai_action = "ALLOW"
     if auto_ok(db, mode, _a):
+        from .. import ai_review
+        ai_action, rv, _w = ai_review.gate(db, sig)  # spot size is set by place(); a NEUTRAL "half" also goes to approval
+        if ai_action != "ALLOW":
+            if rv is not None:
+                rv.action = "VETO"
+            assess.lifecycle(db, sig.id, "AI_VETO", (rv.summary.splitlines()[-1] if rv and rv.summary else "AI review")[:500])
+    if ai_action == "ALLOW" and auto_ok(db, mode, _a):
         p, _checks, _ = place(db, symbol=sym, sl=sig.stop_loss, tp=sig.take_profit, by="auto", source=sig.strategy, signal=sig)
         if p is not None:
             sig.status = "ORDERED"

@@ -35,6 +35,7 @@ def get_lab(user: User = Depends(require("backtest.run")), db: Session = Depends
     st = state.get(db, "strategy_lab")
     return {**st, "running": lab._lock.locked(), "catalog": [{"name": k, "description": v, **(INFO.get(k) or BASE_INFO.get(k) or {})}
                                                              for k, v in STRATEGIES.items()],
+            "markets": list(state.get(db, "strategy")["symbols"]) + list(state.get(db, "crypto").get("symbols", [])),
             "live": {"forex": state.get(db, "strategy")["name"], "crypto": state.get(db, "crypto").get("strategy") or state.get(db, "strategy")["name"]},
             "honesty": "A high win rate alone does not make money: mean-reversion wins often but small; trend systems win less but bigger. "
                        "Judge by net expectancy after costs on the untouched final 20% of the data, with enough trades."}
@@ -52,6 +53,37 @@ def run_lab(body: RunIn, request: Request, user: User = Depends(require("backtes
     if not lab.start(body.model_dump()):
         raise HTTPException(409, "The strategy lab is already running")
     audit(db, "lab.run", user=user, ip=client_ip(request), details=body.model_dump())
+    db.commit()
+    return {"status": "started"}
+
+
+class CompareIn(BaseModel):
+    symbol: str = Field(max_length=32)
+    timeframe: str = "H1"
+    strategies: list[str] = Field(min_length=1, max_length=lab.MAX_COMPARE)
+    candles: int = Field(default=8000, ge=500, le=25_000)
+    fee_pct: float | None = Field(default=None, ge=0, le=1)  # crypto only: exchange fee per side, %
+
+
+@router.get("/compare")
+def get_compare(user: User = Depends(require("backtest.run")), db: Session = Depends(get_db)):
+    return {**state.get(db, "strategy_compare"), "running": lab._cmp_lock.locked(), "max": lab.MAX_COMPARE}
+
+
+@router.post("/compare")
+def run_compare(body: CompareIn, request: Request, user: User = Depends(require("backtest.run")), db: Session = Depends(get_db)):
+    if body.timeframe not in {"M15", "H1", "H4", "D1"}:
+        raise HTTPException(400, "timeframe must be M15, H1, H4 or D1")
+    bad = [s for s in body.strategies if s not in STRATEGIES]
+    if bad:
+        raise HTTPException(400, f"Unknown strategy: {', '.join(bad)}")
+    watched = set(state.get(db, "strategy")["symbols"]) | set(state.get(db, "crypto").get("symbols", []))
+    if body.symbol not in watched:
+        raise HTTPException(400, "Pick one of your watched markets")
+    params = {**body.model_dump(), "strategies": list(dict.fromkeys(body.strategies))}
+    if not lab.start_compare(params):
+        raise HTTPException(409, "A comparison is already running")
+    audit(db, "lab.compare", user=user, ip=client_ip(request), details=params)
     db.commit()
     return {"status": "started"}
 

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { Badge, Card, Field, PasswordPrompt, Switch, fmt, useAction, useApi } from "../components.jsx";
+import { CompareCard, HoldBadge, InsightSettingsCard } from "./Insight.jsx";
 
 const MODE_INFO = {
   PAPER: ["Practice (forex paper)", "Fake money inside the app."],
@@ -193,8 +194,10 @@ export default function StrategyLab() {
   return (
     <div className="stack">
       <AutomationCard />
+      <InsightSettingsCard />
       <RaceCard />
       <Catalog data={data} onApply={apply} canEdit={can("strategy.edit")} />
+      {can("backtest.run") && <CompareCard catalog={data.catalog} markets={data.markets || []} />}
       <Card title="Test every strategy on my markets (with costs)" actions={
         <button className="btn primary sm" disabled={busy || running}
           onClick={() => run(() => api.post("/lab/run", { timeframes: tfs, backfill_days: Number(days) }), "Strategy lab started").then(reload).catch(() => {})}>
@@ -230,12 +233,13 @@ export default function StrategyLab() {
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr><th>Market</th><th>TF</th><th>Strategy</th><th>Trades</th><th>Win %</th><th>Profit factor</th><th>Avg R</th>
-                <th>Max DD %</th><th>Final test (trades · win % · PF · avg R)</th><th>Verdict</th><th></th></tr></thead>
+                <th>Max DD %</th><th>Final test (trades · win % · PF · avg R)</th><th>vs hold</th><th>Verdict</th><th></th></tr></thead>
               <tbody>{data.results.slice(0, 60).map((r, i) => (
                 <tr key={i}>
                   <td>{r.symbol}</td><td>{r.tf}</td><td className="small">{r.strategy}</td><td>{r.trades}</td>
                   <td>{fmt.num(r.win_rate_pct, 1)}</td><td>{fmt.num(r.profit_factor, 2)}</td><td>{fmt.num(r.avg_r, 2)}</td><td>{fmt.num(r.max_dd_pct, 1)}</td>
                   <td className="small">{r.final_test.trades ?? 0} · {fmt.num(r.final_test.win_rate_pct, 0)}% · {fmt.num(r.final_test.profit_factor, 2)} · {fmt.num(r.final_test.avg_r, 2)}</td>
+                  <td><HoldBadge v={r.vs_hold} /></td>
                   <td><Badge tone={r.promising ? "good" : r.verdict.startsWith("TOO") ? "muted" : "bad"}>{r.verdict}</Badge></td>
                   <td>{can("strategy.edit") && r.promising && <button className="btn ghost sm" onClick={() => apply(r.crypto ? "crypto" : "forex", r.strategy)}>Use</button>}</td>
                 </tr>

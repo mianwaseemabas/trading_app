@@ -96,6 +96,36 @@ def evaluate_symbol(db: Session, symbol: str, tf: str, cfg: dict, mode: str) -> 
         assess.request_approval(db, sig, decision, int(controls.get("approval_minutes", 60)))
         event(db, "approval", f"{symbol} {tf} {res.action} setup waiting for your approval ({a.score}/100)", "INFO")
         return sig
+    # AI bull/bear review (VETO mode only): can send the setup to manual approval or halve the size — never enlarge it.
+    from . import ai_review
+    ai_action, rv, waited = ai_review.gate(db, sig)
+    if ai_action == "VETO":
+        assess.request_approval(db, sig, decision, int(controls.get("approval_minutes", 60)))
+        assess.lifecycle(db, sig.id, "AI_VETO", (rv.summary.splitlines()[-1] if rv and rv.summary else "AI review")[:500])
+        event(db, "approval", f"{symbol} {tf} {res.action}: AI review blocked the auto trade — waiting for your approval", "INFO")
+        return sig
+    if waited:  # the AI took seconds: re-check price and risk before placing anything
+        ctx = trading.build_context(db, symbol=symbol, side=res.action, tf=tf, sl=res.stop_loss, tp=res.take_profit,
+                                    mode=mode, duplicate=dup)
+        decision = risk_evaluate(ctx)
+        sig.risk_checks = decision.checks
+        if not decision.approved:
+            sig.status = "REJECTED"
+            assess.lifecycle(db, sig.id, "ORDER_REJECTED", "risk re-check after AI review failed: "
+                             + "; ".join(c["check"] for c in decision.checks if not c["passed"])[:400])
+            return sig
+    if ai_action == "HALF":
+        old = decision.volume
+        v = ai_review.shrink(old, ctx.spec.volume_min, ctx.spec.volume_step)
+        if v is None:
+            if rv is not None:
+                rv.action = "VETO"
+            assess.request_approval(db, sig, decision, int(controls.get("approval_minutes", 60)))
+            assess.lifecycle(db, sig.id, "AI_VETO", "AI neutral — half size is below the broker minimum, sent to manual approval")
+            return sig
+        decision.volume = v
+        decision.risk_amount = round(decision.risk_amount * v / old, 2) if old else decision.risk_amount
+        assess.lifecycle(db, sig.id, "AI_HALF_SIZE", f"AI neutral — size {old} → {v}")
     o = trading.place_order(db, sig, decision, mode)
     if o.status == "REJECTED":
         sig.status = "REJECTED"
@@ -161,12 +191,12 @@ def every(name: str, seconds: float) -> bool:
 
 def research_jobs(db: Session) -> None:
     """Data incidents, SMC event log, shadow outcomes, scheduled alerts and alert delivery (fail-safe)."""
-    from . import ai_jobs, alerts, assess, chart, drawings, headlines, health, news_trading, opportunities, quality, race, tadawul
+    from . import ai_jobs, ai_review, alerts, assess, chart, drawings, headlines, health, news_trading, opportunities, quality, race, tadawul
     jobs = [("incidents", 30, quality.track_incidents), ("smc_log", 120, log_all_smc), ("outcomes", 60, assess.track_outcomes),
             ("scheduled", 60, alerts.scheduled), ("headlines", 60, headlines.refresh), ("reconcile", 300, reconcile_paper), ("deliver", 5, alerts.deliver_pending),
             ("ticks", 600, chart.prune_ticks), ("ai_jobs", 60, ai_jobs.scheduled), ("health", 60, health.monitor),
             ("heartbeat", 20, health.heartbeat), ("race", 60, race.run), ("drawings", 10, drawings.check), ("tadawul", 60, tadawul.refresh),
-            ("news_ai", 180, news_trading.classify), ("opportunities", 300, opportunities.job)]
+            ("news_ai", 180, news_trading.classify), ("opportunities", 300, opportunities.job), ("ai_review", 60, ai_review.scheduled)]
     for name, sec, fn in jobs:
         if not every(name, sec):
             continue

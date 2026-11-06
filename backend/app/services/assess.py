@@ -135,6 +135,15 @@ def economics(d, ctx) -> dict:
     return out
 
 
+def summary(tm: dict) -> dict:
+    """Compact Time Machine result stored with the assessment (the full report is served on demand)."""
+    rp, sm = tm.get("replay") or {}, tm.get("simulation") or {}
+    return {"verdict": (tm.get("verdict") or {}).get("code"), "text": (tm.get("verdict") or {}).get("text"),
+            "replay_n": rp.get("n"), "replay_p_target_pct": rp.get("p_target_pct"), "replay_ci95": rp.get("p_target_ci95"),
+            "replay_avg_r_net": rp.get("avg_r_net"), "sim_p_target_pct": sm.get("p_target_pct"),
+            "break_even_pct": rp.get("break_even_pct") or tm.get("break_even_pct")}
+
+
 def assess(db: Session, sig: Signal, *, d=None, ctx=None, save: bool = True) -> SignalAssessment:
     cfg = state.get(db, "strategy")
     acfg = state.get(db, "assessment")
@@ -231,6 +240,18 @@ def assess(db: Session, sig: Signal, *, d=None, ctx=None, save: bool = True) -> 
         nb = None
     if nb:
         gate("recent high-impact news does not point against the trade (AI-tagged)", not nb["opposing"], nb["detail"])
+    tmc = state.get(db, "timemachine")
+    tm_res = None
+    if save and sig.id and tmc.get("enabled", True):
+        try:
+            from . import timemachine
+            tm_res = timemachine.for_signal(db, sig, cost_r=float(eco.get("cost_r") or 0))
+        except Exception:  # noqa: BLE001 — research aid; never break the assessment
+            import logging
+            logging.getLogger("assess").exception("time machine failed for signal %s", sig.id)
+    if tmc.get("gate") and tm_res:
+        v = tm_res.get("verdict") or {}
+        gate("Time Machine: past setups not clearly below break-even", v.get("code") != "BELOW_BREAK_EVEN", v.get("text", ""))
     failed_risk = [c for c in (d.checks if d else []) if not c["passed"]]
     gate("risk engine (size, limits, exposure, kill switch)", not failed_risk, "; ".join(f"{c['check']} ({c.get('detail', '')})" for c in failed_risk[:4]))
     stats = comparable(db, sig.strategy, sig.symbol)
@@ -259,6 +280,8 @@ def assess(db: Session, sig: Signal, *, d=None, ctx=None, save: bool = True) -> 
     a.reasons = reasons[:10]
     a.economics = {**eco, "comparable_symbol": stats, "comparable_strategy": stats_all,
                    "do_nothing": "Not trading keeps the full risk budget and has zero cost — a valid choice."}
+    if tm_res:
+        a.economics["time_machine"] = summary(tm_res)
     a.data, a.model_version = data, MODEL
     if save and sig.id:
         db.add(a)
