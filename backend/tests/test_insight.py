@@ -169,7 +169,7 @@ def fresh_db():
     df = synth(900)
     for t, r in df.iterrows():
         db.merge(Candle(symbol="EURUSD", timeframe="H4", time=t.to_pydatetime(), open=r.open, high=r.high, low=r.low, close=r.close,
-                        tick_volume=1, spread_points=0, source="test", collected_at=utcnow()))
+                        tick_volume=1, spread_points=0, source="simulator", collected_at=utcnow()))  # other sources are purged
     db.commit()
     db.close()
     yield

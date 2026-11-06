@@ -209,6 +209,11 @@ def _seed(*parts) -> int:
     return int(hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()[:8], 16)
 
 
+def _too_few(n: int, symbol: str, tf: str) -> dict:
+    return {"replay": None, "simulation": {"paths": 0, "note": "not enough candles"}, "break_even_pct": None, "reward_risk": None,
+            "verdict": {"code": "TOO_FEW", "text": f"only {n} candles stored for {symbol} {tf} (need 300+)"}, "symbol": symbol, "timeframe": tf}
+
+
 def for_signal(db, sig, *, cost_r: float | None = None, use_cache: bool = True) -> dict | None:
     """Time Machine for a stored strategy signal (cached per signal for 6 hours)."""
     from .. import state
@@ -222,7 +227,7 @@ def for_signal(db, sig, *, cost_r: float | None = None, use_cache: bool = True) 
     tm = state.get(db, "timemachine")
     df = md.load_candles(db, sig.symbol, sig.timeframe, end=sig.candle_time, limit=int(tm.get("max_candles", 6000)))
     if len(df) < 300:
-        return {"verdict": {"code": "TOO_FEW", "text": f"only {len(df)} candles stored for {sig.symbol} {sig.timeframe}"}}
+        return _too_few(len(df), sig.symbol, sig.timeframe)
     if cost_r is None:
         from ..models import SignalAssessment
         a = db.get(SignalAssessment, sig.id)
@@ -244,7 +249,7 @@ def for_manual(db, symbol: str, tf: str, side: str, entry: float, sl: float, tp:
     tm = state.get(db, "timemachine")
     df = md.load_candles(db, symbol, tf, limit=int(tm.get("max_candles", 6000)))
     if len(df) < 300:
-        return {"verdict": {"code": "TOO_FEW", "text": f"only {len(df)} candles stored for {symbol} {tf}"}}
+        return _too_few(len(df), symbol, tf)
     cfg = {**state.get(db, "strategy"), "name": strategy} if strategy else None
     out = analyze(df, cfg, side, entry, sl, tp, seed=_seed(symbol, tf, side, entry, sl, tp), paths=int(tm.get("paths", SIM_PATHS)))
     out["symbol"], out["timeframe"] = symbol, tf
