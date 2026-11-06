@@ -91,16 +91,16 @@ def _context(db: Session) -> str:
     return json.dumps(data, default=str)[:12000]
 
 
-def _call(provider: str, model: str, key: str, system: str, messages: list[dict]) -> str:
+def _call(provider: str, model: str, key: str, system: str, messages: list[dict], timeout: float = 60, max_tokens: int = 900) -> str:
     if provider == "openai":
-        payload = {"model": model, "messages": [{"role": "system", "content": system}] + messages, "max_tokens": 900}
+        payload = {"model": model, "messages": [{"role": "system", "content": system}] + messages, "max_tokens": max_tokens}
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     else:
-        payload = {"model": model, "system": system, "messages": messages, "max_tokens": 900}
+        payload = {"model": model, "system": system, "messages": messages, "max_tokens": max_tokens}
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}
     req = urllib.request.Request(PROVIDERS[provider]["url"], data=json.dumps(payload).encode(), headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")[:300]

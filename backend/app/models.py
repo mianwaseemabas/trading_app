@@ -646,3 +646,29 @@ class ExamResult(Base):
     started_at: Mapped[datetime] = mapped_column(TS, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(TS, nullable=True)
     cert_id: Mapped[str] = mapped_column(String(24), default="")
+
+
+class AIReview(Base):
+    """AI bull/bear review of a strategy setup (idea from TradingAgents). Advisory: it can only block or shrink a trade."""
+
+    __tablename__ = "ai_reviews"
+
+    signal_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(TS, default=utcnow, index=True)
+    mode: Mapped[str] = mapped_column(String(10), default="LOG_ONLY")   # LOG_ONLY | VETO | MANUAL
+    style: Mapped[str] = mapped_column(String(10), default="debate")    # debate (3 calls) | quick (1 call)
+    provider: Mapped[str] = mapped_column(String(16), default="")
+    model: Mapped[str] = mapped_column(String(100), default="")
+    rating: Mapped[str] = mapped_column(String(12), default="")         # BUY | OVERWEIGHT | HOLD | UNDERWEIGHT | SELL | ERROR
+    stance: Mapped[str] = mapped_column(String(8), default="")          # AGREE | NEUTRAL | OPPOSE | ERROR (relative to the setup)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    bull_case: Mapped[str] = mapped_column(Text, default="")
+    bear_case: Mapped[str] = mapped_column(Text, default="")
+    bull_point: Mapped[str] = mapped_column(Text, default="")
+    bear_point: Mapped[str] = mapped_column(Text, default="")
+    change_mind: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    action: Mapped[str] = mapped_column(String(10), default="NONE")     # NONE | ALLOW | HALF | VETO (what it did to an auto trade)
+    error: Mapped[str] = mapped_column(Text, default="")
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    seconds: Mapped[float] = mapped_column(Float, default=0)

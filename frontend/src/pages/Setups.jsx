@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../App.jsx";
 import { AssessmentPanel } from "./Assessment.jsx";
+import { InsightPanel } from "./Insight.jsx";
 import { Badge, Card, Field, Modal, Switch, Table, countdown, digitsFor, fmt, modeLabel, statusTone, useAction, useApi, useToast } from "../components.jsx";
 
 const STRAT = { trend_pullback: "EMA trend pullback", smc_sweep_bos: "SMC sweep → BOS → retest", manual: "manual" };
@@ -33,6 +34,10 @@ export function SetupReport({ id, onClose, onDecided }) {
       <div className="alert info small" style={{ marginTop: 8 }}><b>Hypothesis.</b> {r.hypothesis}<br /><b>Invalidation.</b> {r.invalidation}</div>
       <details open={waiting} style={{ margin: "10px 0" }}><summary className="small"><b>Score, verdict and money at stake (net of costs)</b></summary>
         <AssessmentPanel signalId={id} live={waiting} />
+      </details>
+
+      <details open={waiting} style={{ margin: "10px 0" }}><summary className="small"><b>Time Machine odds and AI bull/bear review</b></summary>
+        <InsightPanel signalId={id} />
       </details>
 
       <div className="outcome">

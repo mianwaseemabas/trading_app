@@ -135,6 +135,7 @@ DEFAULTS: dict[str, Any] = {
     "opportunities_sent": [],
     "headline_status": {"at": "", "feeds": {}},
     "strategy_lab": {"status": "NEVER_RUN", "results": [], "skipped": []},
+    "strategy_compare": {"status": "NEVER_RUN", "results": []},
     "alert_prefs": {"channels": {"telegram": ["SIGNAL_QUALIFIED", "AUTO_TRADE", "MARKET_NEWS", "ORDER_FILLED", "APPROVAL_REQUIRED", "STOP_HIT", "TARGET_1_HIT", "ORDER_REJECTED", "LOSS_LIMIT_REACHED",
                                               "BROKER_DISCONNECTED", "KILL_SWITCH_ACTIVE", "PROTECTION_FAILURE", "RECONCILIATION",
                                               "DAILY_SUMMARY", "WEEKLY_REVIEW"],
@@ -160,6 +161,14 @@ DEFAULTS: dict[str, Any] = {
     "connector_status": {},  # per connector: state, message, at
     "external_positions": {"connector": "", "at": "", "positions": []},
     "ai": {"provider": "none", "model": "", "api_key_enc": "", "enabled": False, "share_data": True},
+    # Time Machine (odds of target before stop from past setups + simulation). gate=True adds a hard gate that blocks
+    # setups whose past record is clearly below break-even.
+    "timemachine": {"enabled": True, "gate": False, "paths": 10000, "max_candles": 6000},
+    # AI bull/bear review of qualified setups. OFF | LOG_ONLY (records only, never changes a trade) |
+    # VETO (before an AUTO trade: an opposing review sends the setup to manual approval; a neutral one applies
+    # neutral_action). It can only block or shrink a trade, never place or enlarge one. Fails closed in VETO mode.
+    "ai_review": {"mode": "OFF", "style": "debate", "neutral_action": "HALF", "min_confidence": 60, "timeout_s": 45,
+                  "max_per_day": 20},
 }
 
 # Risk settings where a larger value means more risk. Increases require password re-entry.
